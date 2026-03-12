@@ -58,7 +58,7 @@ mkdir -p out
 mkdir -p plots
 mkdir -p benchmark_results
 
-# SBWT construction for DKS. Assumes we have 200 GB RAM available (-m 200)
+# SBWT construction for HKS. Assumes we have 200 GB RAM available (-m 200)
 mkdir CHM13/sbwt
 /usr/bin/time -v sbwt build --input-list feature_tree/chromosome_fof.txt -t 64 -v -o CHM13/sbwt/CHM13-k63-added-dummies --temp-dir temp --in-memory --build-lcs -k 63 -m 200 -r --add-all-dummy-paths
 
@@ -73,7 +73,9 @@ python3 scripts/print_kraken_query_benchmark_commands.py | bash
 python3 scripts/print_kraken_to_heatmaps_commands.py | bash
 
 # DKS parallel speedup
-seqtools extract-reads -r 0 -r 1 query/hg002v1.1.fasta.gz | gzip > query/hg002v1.1_chr1.fasta.gz
+# Extract the first two chromosomes (chr1 maternal and paternal)
+zcat query/hg002v1.1.fasta.gz | awk '/^>/{n++; if(n>2) exit} n' > query/hg002v1.1_chr1.fasta.gz
+# Run
 python3 scripts/print_parallel_speedup_commands.py | bash
 
 # Plots
