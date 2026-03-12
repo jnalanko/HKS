@@ -1,7 +1,33 @@
 Some of these scripts use rust-script. Install with `cargo install rust-script`.
 
+# Downloading the data
+
+The reference is the T2T assembly CHM13v2.0 and the query is the diploid T2T assembly hg002v1.1 Currently they can be downloaded like this: 
+
+```
+mkdir -p CHM13
+curl https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/analysis_set/chm13v2.0.fa.gz -o CHM13/chm13v2.0.fa.gz
+
+mkdir -p query
+curl https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/HG002/assemblies/hg002v1.1.fasta.gz -o query/hg002v1.1.fasta.gz
+```
+
+After this, run this script to split CHM13 into one file per chromosome.
+
+```
+mkdir -p CHM13/chromosomes
+zcat CHM13/chm13v2.0.fa.gz | awk '
+/^>/ {
+    if (out) close(out)
+    out = "CHM13/chromosomes/" n++ ".fna"
+}
+{ print > out }
+'
+```
+
+The CHM13 directory should look like this:
+
 Everything except the reference and query genomes should be in the repository already.
-The reference is CHM13 and the query is hg002. The CHM13 directory should look like this:
 
 ```
 CHM13/
