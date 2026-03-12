@@ -1,3 +1,6 @@
 [submodule "bitvec_sds"]
 	path = bitvec_sds
 	url = https://github.com/jnalanko/bitvec_sds
+[submodule "sbwt-rs-cli"]
+	path = sbwt-rs-cli
+	url = https://github.com/jnalanko/sbwt-rs-cli
