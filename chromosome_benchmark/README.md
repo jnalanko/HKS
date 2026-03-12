@@ -62,9 +62,9 @@ mkdir -p benchmark_results
 mkdir CHM13/sbwt
 /usr/bin/time -v sbwt build --input-list feature_tree/chromosome_fof.txt -t 64 -v -o CHM13/sbwt/CHM13-k63-added-dummies --temp-dir temp --in-memory --build-lcs -k 63 -m 200 -r --add-all-dummy-paths
 
-python3 scripts/print_dks_build_benchmark_commands.py | bash
-python3 scripts/print_dks_query_benchmark_commands.py | bash
-python3 scripts/print_dks_to_heatmaps_commands.py | bash
+python3 scripts/print_hks_build_benchmark_commands.py | bash
+python3 scripts/print_hks_query_benchmark_commands.py | bash
+python3 scripts/print_hks_to_heatmaps_commands.py | bash
 
 # Kraken
 bash scripts/setup_kraken_dir.bash
