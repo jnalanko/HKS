@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Draw DKS, Kraken, and differential heatmaps in a 3×1 grid.
+"""Draw HKS, Kraken, and differential heatmaps in a 3×1 grid.
 
 Usage:
-  python3 scripts/draw_combined_heatmap.py <dks.tsv> <kraken.tsv> <out.png>
+  python3 scripts/draw_combined_heatmap.py <hks.tsv> <kraken.tsv> <out.png>
 """
 
 import argparse
@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from heatmap_lib import (
     ROW_ORDER_TOP_TO_BOTTOM, COL_ORDER,
-    load_dks_maps, load_kraken_taxid_map, translate,
+    load_hks_maps, load_kraken_taxid_map, translate,
 )
 
 
@@ -59,45 +59,45 @@ def draw_diff_panel(ax, fig, mat, ordered_cols, ordered_rows):
     ax.set_yticks(range(len(ordered_rows)))
     ax.set_yticklabels([l.replace("_multigroup1", "") for l in ordered_rows], fontsize=32, fontfamily="monospace", fontweight="bold")
     ax.invert_yaxis()
-    ax.set_title("DKS minus Kraken", fontsize=80, pad=20)
+    ax.set_title("HKS minus Kraken", fontsize=80, pad=20)
     cbar = fig.colorbar(im, ax=ax, fraction=0.02, pad=0.01)
     cbar.ax.tick_params(labelsize=32)
-    cbar.set_label("sign(DKS−Kraken) · log₁₀(|DKS−Kraken| + 1)", fontsize=36)
+    cbar.set_label("sign(HKS−Kraken) · log₁₀(|HKS−Kraken| + 1)", fontsize=36)
 
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("dks_tsv",    help="DKS matrix TSV")
+    parser.add_argument("hks_tsv",    help="HKS matrix TSV")
     parser.add_argument("kraken_tsv", help="Kraken matrix TSV")
     parser.add_argument("out",        help="output PNG path")
     args = parser.parse_args()
 
-    dks_class_map, query_name_map = load_dks_maps()
+    hks_class_map, query_name_map = load_hks_maps()
     kraken_class_map = load_kraken_taxid_map("feature_tree/kraken_names.dmp")
 
-    dks_cols,    dks_rows,    dks_mat    = translate(
-        args.dks_tsv,    dks_class_map,    query_name_map, kraken_mode=False)
+    hks_cols, hks_rows, hks_mat = translate(
+        args.hks_tsv, hks_class_map, query_name_map, kraken_mode=False)
     kraken_cols, kraken_rows, kraken_mat = translate(
         args.kraken_tsv, kraken_class_map, query_name_map, kraken_mode=True)
 
-    present_rows = set(dks_rows) | set(kraken_rows)
+    present_rows = set(hks_rows) | set(kraken_rows)
     ordered_rows = [l for l in reversed(ROW_ORDER_TOP_TO_BOTTOM) if l in present_rows]
     ordered_rows += sorted(present_rows - set(ROW_ORDER_TOP_TO_BOTTOM))
 
-    present_cols = set(dks_cols) | set(kraken_cols)
+    present_cols = set(hks_cols) | set(kraken_cols)
     ordered_cols = [l for l in COL_ORDER if l in present_cols]
     ordered_cols += sorted(present_cols - set(COL_ORDER))
 
-    dks_aligned    = reorder(dks_cols,    dks_rows,    dks_mat,    ordered_cols, ordered_rows)
+    hks_aligned    = reorder(hks_cols, hks_rows, hks_mat, ordered_cols, ordered_rows)
     kraken_aligned = reorder(kraken_cols, kraken_rows, kraken_mat, ordered_cols, ordered_rows)
-    diff = (dks_aligned - kraken_aligned).T
+    diff = (hks_aligned - kraken_aligned).T
 
     w = max(8, len(ordered_cols) * 0.5)
     h = max(6, len(ordered_rows) * 0.35)
     fig, axes = plt.subplots(2, 2, figsize=(w * 2, h * 4 * 0.8))
 
-    draw_log_panel(axes[0, 0], fig, dks_aligned,    ordered_cols, ordered_rows, "DKS")
+    draw_log_panel(axes[0, 0], fig, hks_aligned,    ordered_cols, ordered_rows, "HKS")
     draw_log_panel(axes[0, 1], fig, kraken_aligned, ordered_cols, ordered_rows, "Kraken")
     draw_diff_panel(axes[1, 0], fig, diff,          ordered_cols, ordered_rows)
     axes[1, 1].set_visible(False)

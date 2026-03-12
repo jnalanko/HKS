@@ -35,8 +35,8 @@ COL_ORDER = [
 ]
 
 
-def load_dks_maps():
-    """Return (class_taxid_to_name, query_taxid_to_name) for the DKS 0-indexed scheme."""
+def load_hks_maps():
+    """Return (class_taxid_to_name, query_taxid_to_name) for the HKS 0-indexed scheme."""
     chrom_names = []
     with open(NAMES_FILE) as f:
         for line in f:
@@ -101,7 +101,7 @@ def translate(tsv_path, class_name_map, query_name_map, kraken_mode):
     """Load TSV, translate taxid labels to names, apply mode-specific fixes.
 
     In Kraken mode: taxid "0" -> "novel", "A" counts merged into "root".
-    In DKS mode:    "-" -> "novel".
+    In HKS mode:    "-" -> "novel".
 
     Returns (col_labels, row_labels, mat) where:
       col_labels  -- query sequence names  (x-axis after transpose)

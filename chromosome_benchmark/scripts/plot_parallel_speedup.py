@@ -32,7 +32,7 @@ def load_data() -> dict[int, dict[int, float]]:
     for k in K_VALUES:
         data[k] = {}
         for t in T_VALUES:
-            path = LOG_DIR / f"dks-parallel-speedup-k{k}-t{t}.log"
+            path = LOG_DIR / f"hks-parallel-speedup-k{k}-t{t}.log"
             if not path.exists():
                 missing.append(str(path))
                 continue
