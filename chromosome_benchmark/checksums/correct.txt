@@ -1,5 +1,5 @@
 907c96f825c649a547da943557b3faf4696fd1a6  query/hg002v1.1.fasta.gz
-8b2d69b30eab7277d73f42e7a531c925a93ed0ea  query/names.txt
+73d4edffb2aeb99d94a84d11646ce30dfba71d9a  query/names.txt
 bc6f5288c3607ca6dc95834017845c8e1ec7768f  feature_tree/chromosome_names.txt
 f1fc40c7d87728abd7ba2439114bd09baedba8b1  feature_tree/chromosome_tree.txt
 7d29827361caa25d074c6f7db7ee010519802dda  feature_tree/chromosome_fof.txt
