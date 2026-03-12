@@ -34,8 +34,6 @@ zcat query/hg002v1.1.fasta.gz | grep ">" > query/names.txt
 zcat CHM13/chm13v2.0.fa.gz | awk '/^>/ { print substr($1, 2) }' > feature_tree/chromosome_names.txt
 ```
 
-(The names of the chromosomes are at `feature_tree/chromosome_names.txt`, in order 0.fna, 1.fna...)
-
 Optional: verify sha1 checksums of all the data:
 
 ```bash
