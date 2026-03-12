@@ -1,0 +1,3 @@
+example/A.fasta
+example/B.fasta
+example/C.fasta
