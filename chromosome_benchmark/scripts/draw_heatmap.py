@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 from heatmap_lib import (
     ROW_ORDER_TOP_TO_BOTTOM, COL_ORDER,
-    load_dks_maps, load_kraken_taxid_map, translate,
+    load_hks_maps, load_kraken_taxid_map, translate,
 )
 
 
@@ -27,8 +27,8 @@ def main():
                         help="resolve taxids using feature_tree/kraken_names.dmp")
     args = parser.parse_args()
 
-    dks_class_map, query_taxid_to_name = load_dks_maps()
-    class_name_map = load_kraken_taxid_map("feature_tree/kraken_names.dmp") if args.kraken else dks_class_map
+    hks_class_map, query_taxid_to_name = load_hks_maps()
+    class_name_map = load_kraken_taxid_map("feature_tree/kraken_names.dmp") if args.kraken else hks_class_map
 
     col_labels, row_labels, mat = translate(args.tsv, class_name_map, query_taxid_to_name, args.kraken)
 
