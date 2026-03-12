@@ -1,4 +1,4 @@
-# HKS — Disjoint K-mer Sets
+# HKS: Hierarchical K-mer Sets
 
 A colored k-mer index for querying which input dataset (color) each k-mer originates from. Built on top of the [SBWT](sbwt-rs-cli/api/README.md) (Spectral Burrows-Wheeler Transform) for compact, high-speed DNA k-mer indexing.
 
