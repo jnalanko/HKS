@@ -1,4 +1,4 @@
-Some of these scripts use rust-script. Install with cargo install rust-script.
+Some of these scripts use rust-script. Install with `cargo install rust-script`.
 
 Everything except the reference and query genomes should be in the repository already.
 The reference is CHM13 and the query is hg002. The CHM13 directory should look like this:
@@ -36,7 +36,7 @@ CHM13/chromosomes/2.fna
 CHM13/chromosomes/3.fna
 ```
 
-(The names of the chromosomes are at `feature_tree/chromosome_names.txt`)
+(The names of the chromosomes are at `feature_tree/chromosome_names.txt`, in order 0.fna, 1.fna...)
 
 The query directory should look like this:
 
@@ -46,7 +46,7 @@ query/hg002v1.1.fasta.gz
 query/names.txt
 ```
 
-query/names.txt is just the fasta header of the query in order.
+query/names.txt is just the fasta headers of the query in order.
 
 # Pipeline 
 
