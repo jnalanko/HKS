@@ -1,8 +1,8 @@
 [package]
-name = "dks"
+name = "hks"
 version = "0.1.2"
 edition = "2021"
-description = "A data structure for querying disjoint k-mer sets"
+description = "A data structure for querying hierarchical k-mer sets"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
