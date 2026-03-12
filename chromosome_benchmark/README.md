@@ -15,7 +15,7 @@ mkdir -p query
 curl https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/HG002/assemblies/hg002v1.1.fasta.gz -o query/hg002v1.1.fasta.gz
 ```
 
-After this, run to CHM13 into one file per chromosome and to extract information from fasta headers.
+After this, run the following to split CHM13 into one file per chromosome and to extract information from fasta headers.
 
 ```bash
 mkdir -p CHM13/chromosomes
