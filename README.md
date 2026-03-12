@@ -70,7 +70,7 @@ Key options:
 | `--no-header` | Suppress TSV header line |
 | `--n-threads` | Number of threads |
 
-Output is TSV with columns `query_rank`, `from_kmer`, `to_kmer`, `color` (run-length encoded intervals).
+Output is TSV with columns `query_rank`, `from_kmer`, `to_kmer`, `color`.
 
 ### Other subcommands
 
