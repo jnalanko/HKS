@@ -1,5 +1,11 @@
 Some of these scripts use rust-script. Install with `cargo install rust-script`.
 
+# Requirement:
+
+- `sbwt` rust CLI installed
+- `hks` installed
+- `kraken2` installed
+
 # Downloading the data
 
 Everything except the reference and query genomes should be in the repository already.
