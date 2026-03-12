@@ -1,0 +1,3 @@
+[submodule "bitvec_sds"]
+	path = bitvec_sds
+	url = https://github.com/jnalanko/bitvec_sds

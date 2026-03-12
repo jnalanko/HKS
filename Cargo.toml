@@ -1,0 +1,32 @@
+[package]
+name = "dks"
+version = "0.1.2"
+edition = "2021"
+description = "A data structure for querying disjoint k-mer sets"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+rand = "0.8"
+rand_distr = "0.4"
+sbwt = {path = "./sbwt-rs-cli/api", version = "0.4.1"}
+bitvec = {version = "1.0", features = ["serde"]}
+clap = "4.5" 
+byteorder = "1.5"
+indicatif = "0.17"
+jseqio = "0.1.3"
+env_logger = "0.10"
+log = "0.4"
+simple-sds-sbwt = "0.3.1"
+serde = {version = "1.0.210", features = ["derive"]}
+serde_json = "1.0.128"
+crossbeam = "0.8.4"
+rustc-hash = "2.1.1"
+rand_chacha = "0.9.0"
+human_bytes = "0.4.3"
+rayon = "1.11.0"
+bitvec_sds = {path = "./bitvec_sds", version = "0.1.0"}
+bincode = "1.3.0"
+bytemuck = "1.25.0"
+
