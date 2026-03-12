@@ -19,6 +19,7 @@ After this, run the following to split CHM13 into one file per chromosome and to
 
 ```bash
 mkdir -p CHM13/chromosomes
+mkdir -p feature_tree
 
 # Split chromosomes to individual files
 zcat CHM13/chm13v2.0.fa.gz | awk '
