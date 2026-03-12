@@ -38,7 +38,7 @@ k_list = [15,31,47,63]
 m_list = [15,22,31]
 t = 32
 query_total_bases = 3117292070 
-dks_index_size = 11150448137
+hks_index_size = 11150448137
 
 log_base_dir = "./final_logs"
 
@@ -81,27 +81,27 @@ for k in k_list:
         except Exception as e:
             sys.stderr.write(str(e) + "\n")
 
-dks_build_time = None
-dks_build_mem = None
-dks_build_phase2_time = None
-dks_build_phase2_mem = None
+hks_build_time = None
+hks_build_mem = None
+hks_build_phase2_time = None
+hks_build_phase2_mem = None
 try:
     r1 = parse_stderr(open(f"{log_base_dir}/logs/sbwt-in-mem-k63-t{t}.log").readlines())
-    r2 = parse_stderr(open(f"{log_base_dir}/logs/dks-build-k63-t{t}.log").readlines())
+    r2 = parse_stderr(open(f"{log_base_dir}/logs/hks-build-k63-t{t}.log").readlines())
     if r1['elapsed_seconds'] is not None and r2['elapsed_seconds'] is not None:
-        dks_build_time = r1['elapsed_seconds'] + r2['elapsed_seconds']
+        hks_build_time = r1['elapsed_seconds'] + r2['elapsed_seconds']
     if r1['max_rss_bytes'] is not None and r2['max_rss_bytes'] is not None:
-        dks_build_mem = max(r1['max_rss_bytes'], r2['max_rss_bytes'])
-    dks_build_phase2_time = r2['elapsed_seconds']
-    dks_build_phase2_mem = r2['max_rss_bytes']
+        hks_build_mem = max(r1['max_rss_bytes'], r2['max_rss_bytes'])
+    hks_build_phase2_time = r2['elapsed_seconds']
+    hks_build_phase2_mem = r2['max_rss_bytes']
 except Exception as e:
     sys.stderr.write(str(e) + "\n")
 
 ns_per_bp_re = re.compile(r"Query time per base pair:\s*([\d.]+)\s*nanoseconds")
 
-dks_data = {}
+hks_data = {}
 for k in k_list:
-    query_filename = f"{log_base_dir}/logs/dks-query-k{k}-t{t}.log"
+    query_filename = f"{log_base_dir}/logs/hks-query-k{k}-t{t}.log"
     try:
         ns_per_bp = None
         for line in open(query_filename):
@@ -109,7 +109,7 @@ for k in k_list:
             if match:
                 ns_per_bp = float(match.group(1))
                 break
-        dks_data[k] = ns_per_bp
+        hks_data[k] = ns_per_bp
     except Exception as e:
         sys.stderr.write(str(e) + "\n")
 
@@ -175,21 +175,21 @@ for m in valid_ms:
 
 print(r"\hline")
 
-# DKS row
-dks_row = r"\textsc{dks}"
+# HKS row
+hks_row = r"\textsc{hks}"
 for k in k_list:
-    ns_per_bp = dks_data.get(k)
+    ns_per_bp = hks_data.get(k)
     if ns_per_bp is not None:
         throughput_mbps = 1e9 / ns_per_bp / 2**20  # ns/bp -> Mibp/s
-        dks_row += f" & {dks_build_time / 60:.1f} & {dks_build_mem / 2**30:.1f} & {dks_index_size / 2**30:.1f} & {throughput_mbps:.1f}" if dks_build_time is not None else f" & ? & ? & {dks_index_size / 2**30:.1f} & {throughput_mbps:.1f}"
+        hks_row += f" & {hks_build_time / 60:.1f} & {hks_build_mem / 2**30:.1f} & {hks_index_size / 2**30:.1f} & {throughput_mbps:.1f}" if hks_build_time is not None else f" & ? & ? & {hks_index_size / 2**30:.1f} & {throughput_mbps:.1f}"
     else:
-        dks_row += f" & ? & ? & {dks_index_size / 2**30:.1f} & ?"
-dks_row += r" \\"
-print(dks_row)
+        hks_row += f" & ? & ? & {hks_index_size / 2**30:.1f} & ?"
+hks_row += r" \\"
+print(hks_row)
 
 print(r"\hline")
 print(r"\end{tabular}")
-print(r"\caption{Comparison of Kraken (with minimizer length $m \leq k$, written as Kraken-m) and \textsc{dks} at $t=32$ threads and varying k-mer length $k$. All \textsc{dks} results use the same index built for maximum $k = 63$. Columns: build time ($B_t$, minutes), peak memory during build ($B_m$, GiB), index size ($I$, GiB), and query throughput ($Q_t$, MiB/s). \textsc{dks} construction proceeds in two phases: first, an SBWT index is built in memory, and second, the \textsc{dks} index is constructed from the SBWT. The $B_t$ and $B_m$ values reported for \textsc{dks} are for the whole two-stage pipeline. The second phase took 189 seconds and used 15.6 GiB of RAM. A slower disk-based option exists for SBWT construction, taking 37 minutes, using 15.9 GiB of RAM and 92.9 GiB of disk. \textcolor{red}{Need to subtract index loading time from Kraken (though it should be close to negligible since the indexes are so small). The result on DKS k = 15 is slow probably because it becomes IO-bottlenecked by the Lurstre file system. Could be avoided by writing to /dev/null (it's not a real limitation, a fast SSD would also fix it)}}")
+print(r"\caption{Caption goes here}")
 print(r"\label{tab:performance}")
 print(r"\end{table}")
 
