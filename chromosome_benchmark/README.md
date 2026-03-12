@@ -72,7 +72,7 @@ python3 scripts/print_kraken_build_benchmark_commands.py | bash
 python3 scripts/print_kraken_query_benchmark_commands.py | bash
 python3 scripts/print_kraken_to_heatmaps_commands.py | bash
 
-# DKS parallel speedup
+# HKS parallel speedup
 # Extract the first two chromosomes (chr1 maternal and paternal)
 zcat query/hg002v1.1.fasta.gz | awk '/^>/{n++; if(n>2) exit} n' > query/hg002v1.1_chr1.fasta.gz
 # Run
