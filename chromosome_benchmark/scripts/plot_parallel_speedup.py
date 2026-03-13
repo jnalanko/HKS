@@ -9,7 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-LOG_DIR = Path("final_logs/parallel_speedup")
+LOG_DIR = Path("preprint_results/parallel_speedup")
 K_VALUES = [15, 31, 47, 63]
 #T_VALUES = [1, 2, 4, 8, 16, 32, 64]
 T_VALUES = [1, 2, 4, 8, 16, 32]
@@ -58,13 +58,13 @@ def main():
         ns = [kdata[t] for t in ts]
         throughput = [1e3 / n for n in ns]  # Mbases/s
 
-        ax_thr.plot(ts, throughput, marker="o", label=f"s = {k}, k = 63", color=color)
+        ax_thr.plot(ts, throughput, marker="o", label=f"k = {k}, s = 63", color=color)
 
         # Speedup relative to single-threaded
         if 1 in kdata:
             baseline = kdata[1]
             speedup = [baseline / kdata[t] for t in ts]
-            ax_spd.plot(ts, speedup, marker="o", label=f"s = {k}, k = 63", color=color)
+            ax_spd.plot(ts, speedup, marker="o", label=f"k = {k}, s = 63", color=color)
 
     # Ideal speedup line
     ax_spd.plot(T_VALUES, T_VALUES, "k--", linewidth=1, label="ideal")
