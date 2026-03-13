@@ -413,33 +413,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
-name = "dks"
-version = "0.1.2"
-dependencies = [
- "bincode",
- "bitvec",
- "bitvec_sds",
- "bytemuck",
- "byteorder",
- "clap",
- "crossbeam 0.8.4",
- "env_logger 0.10.2",
- "human_bytes",
- "indicatif",
- "jseqio",
- "log",
- "rand 0.8.5",
- "rand_chacha 0.9.0",
- "rand_distr",
- "rayon",
- "rustc-hash",
- "sbwt",
- "serde",
- "serde_json",
- "simple-sds-sbwt",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -579,6 +552,33 @@ name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+
+[[package]]
+name = "hks"
+version = "0.1.2"
+dependencies = [
+ "bincode",
+ "bitvec",
+ "bitvec_sds",
+ "bytemuck",
+ "byteorder",
+ "clap",
+ "crossbeam 0.8.4",
+ "env_logger 0.10.2",
+ "human_bytes",
+ "indicatif",
+ "jseqio",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.9.0",
+ "rand_distr",
+ "rayon",
+ "rustc-hash",
+ "sbwt",
+ "serde",
+ "serde_json",
+ "simple-sds-sbwt",
+]
 
 [[package]]
 name = "human_bytes"

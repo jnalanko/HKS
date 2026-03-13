@@ -34,6 +34,18 @@ def parse_stderr(lines):
 
     return {"elapsed_seconds": elapsed_seconds, "max_rss_bytes": max_rss_bytes}
 
+kraken_time_re = re.compile(r'processed in ([\d.]+)s')
+
+def parse_kraken_query_time(lines):
+    matches = [kraken_time_re.search(line) for line in lines]
+    matches = [m for m in matches if m]
+    if len(matches) > 1:
+        sys.stderr.write("Warning: multiple 'processed in Xs' lines found in Kraken log, returning None\n")
+        return None
+    if len(matches) == 0:
+        return None
+    return float(matches[0].group(1))
+
 k_list = [15,31,47,63]
 m_list = [15,22,31]
 t = 32
@@ -69,7 +81,9 @@ for k in k_list:
 
         query_filename = f"{log_base_dir}/logs/kraken-query-k{k}-m{m}-t{t}.log"
         try:
-            res = parse_stderr(open(query_filename).readlines())
+            lines = open(query_filename).readlines()
+            res = parse_stderr(lines)
+            res['elapsed_seconds'] = parse_kraken_query_time(lines)
             data[(k, m)] = res
         except Exception as e:
             sys.stderr.write(str(e) + "\n")
