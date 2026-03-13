@@ -263,7 +263,7 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false)]
         k: Option<usize>,
 
-        #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors are reported as '*' normally, or 'multiple' when this flag is set.", long = "report-color-names")]
+        #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
         report_color_names: bool,
 
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
