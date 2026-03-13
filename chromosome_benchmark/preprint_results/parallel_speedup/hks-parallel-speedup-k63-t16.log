@@ -1,30 +1,30 @@
-[2026-03-10T11:02:34Z INFO  dks] Running dks version 0.1.2
-[2026-03-10T11:02:34Z INFO  dks] Loading the index ...
-[2026-03-10T11:02:40Z INFO  dks] Loaded index with k = 63
-[2026-03-10T11:02:40Z INFO  dks] Index loaded in 5.54204135 seconds
-[2026-03-10T11:02:40Z INFO  dks] Running queries from query/hg002v1.1_chr1.fasta.gz ...
-[2026-03-10T11:02:50Z INFO  dks::parallel_queries] All input read
-[2026-03-10T11:02:50Z INFO  dks::parallel_queries] 496082684 k-mers in 496082808 base pairs queried in 10 seconds (excluding index loading time)
-[2026-03-10T11:02:50Z INFO  dks::parallel_queries] Query time per k-mer: 21.91260893718274 nanoseconds
-[2026-03-10T11:02:50Z INFO  dks::parallel_queries] Query time per base pair: 21.912603459944936 nanoseconds
-	Command being timed: "dks lookup -q query/hg002v1.1_chr1.fasta.gz -i index/CHM13-k63.dks -t 16 -k 63"
-	User time (seconds): 153.62
-	System time (seconds): 4.61
-	Percent of CPU this job got: 955%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:16.56
+[2026-03-13T19:42:49Z INFO  hks] Running dks version 0.1.2
+[2026-03-13T19:42:49Z INFO  hks] Loading the index ...
+[2026-03-13T19:42:54Z INFO  hks] Loaded index with k = 63
+[2026-03-13T19:42:54Z INFO  hks] Index loaded in 4.207419328 seconds
+[2026-03-13T19:42:54Z INFO  hks] Running queries from query/hg002v1.1_chr1.fasta ...
+[2026-03-13T19:43:00Z INFO  hks::parallel_queries] All input read
+[2026-03-13T19:43:00Z INFO  hks::parallel_queries] 496082684 k-mers in 496082808 base pairs queried in 6 seconds (excluding index loading time)
+[2026-03-13T19:43:00Z INFO  hks::parallel_queries] Query time per k-mer: 14.027003647641932 nanoseconds
+[2026-03-13T19:43:00Z INFO  hks::parallel_queries] Query time per base pair: 14.02700014147638 nanoseconds
+	Command being timed: "hks lookup -q query/hg002v1.1_chr1.fasta -i index/CHM13-k63.hks -t 16 -k 63"
+	User time (seconds): 109.50
+	System time (seconds): 3.59
+	Percent of CPU this job got: 1000%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:11.30
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 11395276
+	Maximum resident set size (kbytes): 11826444
 	Average resident set size (kbytes): 0
 	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 78586
-	Voluntary context switches: 84933
-	Involuntary context switches: 163
+	Minor (reclaiming a frame) page faults: 79132
+	Voluntary context switches: 1125
+	Involuntary context switches: 108
 	Swaps: 0
 	File system inputs: 0
-	File system outputs: 24
+	File system outputs: 16
 	Socket messages sent: 0
 	Socket messages received: 0
 	Signals delivered: 0

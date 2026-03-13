@@ -1,29 +1,29 @@
-[2026-03-10T10:39:41Z INFO  dks] Running dks version 0.1.2
-[2026-03-10T10:39:41Z INFO  dks] Loading the index ...
-[2026-03-10T10:39:46Z INFO  dks] Loaded index with k = 63
-[2026-03-10T10:39:46Z INFO  dks] Index loaded in 4.507100853 seconds
-[2026-03-10T10:39:46Z INFO  dks] Running queries from query/hg002v1.1_chr1.fasta.gz ...
-[2026-03-10T10:39:46Z INFO  dks] Preprocessing colors for 47-mer queries
-[2026-03-10T10:40:17Z INFO  dks] Running 47-mer queries
-[2026-03-10T10:40:24Z INFO  dks::parallel_queries] All input read
-[2026-03-10T10:40:24Z INFO  dks::parallel_queries] 496082716 k-mers in 496082808 base pairs queried in 6 seconds (excluding index loading time)
-[2026-03-10T10:40:24Z INFO  dks::parallel_queries] Query time per k-mer: 13.972194149170882 nanoseconds
-[2026-03-10T10:40:24Z INFO  dks::parallel_queries] Query time per base pair: 13.972191557986827 nanoseconds
-	Command being timed: "dks lookup -q query/hg002v1.1_chr1.fasta.gz -i index/CHM13-k63.dks -t 32 -k 47"
-	User time (seconds): 199.93
-	System time (seconds): 5.20
-	Percent of CPU this job got: 473%
-	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:43.34
+[2026-03-13T19:43:43Z INFO  hks] Running dks version 0.1.2
+[2026-03-13T19:43:43Z INFO  hks] Loading the index ...
+[2026-03-13T19:43:48Z INFO  hks] Loaded index with k = 63
+[2026-03-13T19:43:48Z INFO  hks] Index loaded in 4.2175804 seconds
+[2026-03-13T19:43:48Z INFO  hks] Running queries from query/hg002v1.1_chr1.fasta ...
+[2026-03-13T19:43:48Z INFO  hks] Preprocessing colors for 47-mer queries
+[2026-03-13T19:43:49Z INFO  hks] Running 47-mer queries
+[2026-03-13T19:43:54Z INFO  hks::parallel_queries] All input read
+[2026-03-13T19:43:55Z INFO  hks::parallel_queries] 496082716 k-mers in 496082808 base pairs queried in 6 seconds (excluding index loading time)
+[2026-03-13T19:43:55Z INFO  hks::parallel_queries] Query time per k-mer: 12.117839920873196 nanoseconds
+[2026-03-13T19:43:55Z INFO  hks::parallel_queries] Query time per base pair: 12.117837673584528 nanoseconds
+	Command being timed: "hks lookup -q query/hg002v1.1_chr1.fasta -i index/CHM13-k63.hks -t 32 -k 47"
+	User time (seconds): 224.45
+	System time (seconds): 3.97
+	Percent of CPU this job got: 1909%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:11.96
 	Average shared text size (kbytes): 0
 	Average unshared data size (kbytes): 0
 	Average stack size (kbytes): 0
 	Average total size (kbytes): 0
-	Maximum resident set size (kbytes): 11407724
+	Maximum resident set size (kbytes): 12430160
 	Average resident set size (kbytes): 0
-	Major (requiring I/O) page faults: 0
-	Minor (reclaiming a frame) page faults: 205763
-	Voluntary context switches: 74010
-	Involuntary context switches: 408
+	Major (requiring I/O) page faults: 1
+	Minor (reclaiming a frame) page faults: 130967
+	Voluntary context switches: 3355
+	Involuntary context switches: 1358
 	Swaps: 0
 	File system inputs: 0
 	File system outputs: 24
