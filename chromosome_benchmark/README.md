@@ -19,7 +19,7 @@ curl https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/CHM13/assemblies/a
 
 mkdir -p query
 curl https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/HG002/assemblies/hg002v1.1.fasta.gz -o query/hg002v1.1.fasta.gz
-gunzip query/hg002v1.1.fasta.gz
+zcat query/hg002v1.1.fasta.gz > query/hg002v1.1.fasta
 ```
 
 After this, run the following to split CHM13 into one file per chromosome and to extract information from fasta headers.
@@ -75,7 +75,7 @@ python3 scripts/print_kraken_to_heatmaps_commands.py | bash
 
 # HKS parallel speedup
 # Extract the first two chromosomes (chr1 maternal and paternal)
-zcat query/hg002v1.1.fasta.gz | awk '/^>/{n++; if(n>2) exit} n' | gzip > query/hg002v1.1_chr1.fasta.gz
+zcat query/hg002v1.1.fasta.gz | awk '/^>/{n++; if(n>2) exit} n' > query/hg002v1.1_chr1.fasta
 # Run
 python3 scripts/print_parallel_speedup_commands.py | bash
 
