@@ -67,9 +67,9 @@ python3 scripts/print_hks_query_benchmark_commands.py | bash
 python3 scripts/print_hks_to_heatmaps_commands.py | bash
 
 # Kraken
-bash scripts/setup_kraken_dir.bash
-python3 scripts/print_kraken_build_benchmark_commands.py | bash
-python3 scripts/print_kraken_query_benchmark_commands.py | bash
+python3 scripts/print_setup_kraken_dir_commands.py | bash
+python3 scripts/print_kraken_minimizer_build_commands.py | bash
+python3 scripts/print_kraken_minimizer_query_commands.py | bash
 python3 scripts/print_kraken_to_heatmaps_commands.py | bash
 
 # HKS parallel speedup
