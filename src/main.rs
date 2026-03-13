@@ -274,6 +274,9 @@ pub enum Subcommands {
 
         #[arg(help = "Do not print the header line.", long = "no-header")]
         no_header: bool,
+
+        #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced")]
+        batch_size: usize,
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -616,7 +619,7 @@ fn main() {
 
         },
 
-        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_color_names, report_query_names, report_misses, no_header} => {
+        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_color_names, report_query_names, report_misses, no_header, batch_size} => {
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -639,7 +642,6 @@ fn main() {
             let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
             let writer = OutputWriter::new(stdout, seq_names, color_names, index.root_id(), report_misses, !no_header);
 
-            let batch_size = 1000000;
             log::info!("Running queries from {} ...", query_path.display());
             run_queries(n_threads, reader, index, batch_size, k, writer);
         },
