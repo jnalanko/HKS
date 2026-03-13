@@ -1,7 +1,7 @@
 print("set -xue")
 
 for k in [15,31,47,63]:
-    for m in [15,22,32]:
+    for m in [15,22,31]:
         if m > k: continue
         t = 32
         print(f"rust-script scripts/kraken_to_bed out/hg002-k{k}-m{m}-t{t}-kraken.txt out/hg002-k{k}-m{m}-kraken.bed")
