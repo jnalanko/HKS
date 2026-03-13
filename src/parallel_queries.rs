@@ -273,8 +273,8 @@ fn output_thread(query_results: crossbeam::channel::Receiver<ProcessedQueryBatch
 
 // Batch size is in nucleotides (= bytes)
 pub fn lookup_parallel<A: ColoredKmerLookupAlgorithm + Send + Sync>(n_threads: usize, mut queries: impl sbwt::SeqStream + Send, kmer_lookup_algo: &A, batch_size: usize, k: usize, mut writer: impl RunWriter) {
-    let (batch_send, batch_recv) = crossbeam::channel::bounded::<QueryBatch>(2); // Read the next batch while the latest one is waiting to be processed
-    let (output_send, output_recv) = crossbeam::channel::bounded::<ProcessedQueryBatch>(2);
+    let (batch_send, batch_recv) = crossbeam::channel::bounded::<QueryBatch>(n_threads); // Read the next batch while the latest one is waiting to be processed
+    let (output_send, output_recv) = crossbeam::channel::bounded::<ProcessedQueryBatch>(n_threads);
 
     let query_start = std::time::Instant::now();
     let mut n_bases_processed = 0_usize;
