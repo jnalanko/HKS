@@ -93,7 +93,7 @@ def main():
     kraken_aligned = reorder(kraken_cols, kraken_rows, kraken_mat, ordered_cols, ordered_rows)
     diff = (hks_aligned - kraken_aligned).T
 
-    w = max(8, len(ordered_cols) * 0.5)
+    w = max(8, len(ordered_cols) * 0.7)
     h = max(6, len(ordered_rows) * 0.35)
     fig, axes = plt.subplots(2, 2, figsize=(w * 2, h * 4 * 0.8))
 
