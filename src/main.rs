@@ -636,7 +636,7 @@ fn main() {
             let reader = DynamicFastXReader::from_file(&query_path)
                 .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
 
-            let stdout = BufWriter::with_capacity(1 << 17, std::io::stdout());
+            let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
             let writer = OutputWriter::new(stdout, seq_names, color_names, index.root_id(), report_misses, !no_header);
 
             let batch_size = 10000;
