@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
-TSV = "node_stats/node_stats.tsv"
+TSV = "preprint_results/node_stats.tsv"
 OUT = "plots/node_stats.pdf"
 
 plt.rcParams.update({
@@ -67,10 +67,10 @@ for color in all_nodes:
 
 axes[1].stackplot(s_values, pct_matrix, labels=labels, colors=colors)
 
-axes[0].set_xlabel(r"$s$")
+axes[0].set_xlabel(r"$k$")
 axes[0].set_ylabel("Count")
 axes[0].set_xlim(1, 63)
-axes[1].set_xlabel(r"$s$")
+axes[1].set_xlabel(r"$k$")
 axes[1].set_ylabel("% of Total")
 axes[1].set_xlim(1, 63)
 axes[1].set_ylim(0, 100)
