@@ -125,7 +125,7 @@ def fmt_time(k, m):
     r = data[(k, m)]
     if r['elapsed_seconds'] is None:
         return "?"
-    throughput_mbps = query_total_bases / r['elapsed_seconds'] / 2**20
+    throughput_mbps = query_total_bases / r['elapsed_seconds'] / 1e6
     return f"{throughput_mbps:.1f}"
 
 def fmt_size(k, m):
@@ -137,7 +137,10 @@ def fmt_build_time(k, m):
     if m > k or (k, m) not in build_data:
         return "NA"
     r = build_data[(k, m)]
-    return f"{r['elapsed_seconds'] / 60:.1f}" if r['elapsed_seconds'] is not None else "?"
+    if r['elapsed_seconds'] is None:
+        return "?"
+    throughput_mbps = ref_total_bases / r['elapsed_seconds'] / 1e6
+    return f"{throughput_mbps:.1f}"
 
 def fmt_build_mem(k, m):
     if m > k or (k, m) not in build_data:
@@ -184,8 +187,9 @@ hks_row = r"\textsc{hks}"
 for k in k_list:
     ns_per_bp = hks_data.get(k)
     if ns_per_bp is not None:
-        throughput_mbps = 1e9 / ns_per_bp / 2**20  # ns/bp -> Mibp/s
-        hks_row += f" & {hks_build_time / 60:.1f} & {hks_build_mem / 2**30:.1f} & {hks_index_size / 2**30:.1f} & {throughput_mbps:.1f}" if hks_build_time is not None else f" & ? & ? & {hks_index_size / 2**30:.1f} & {throughput_mbps:.1f}"
+        throughput_mbps = 1e9 / ns_per_bp / 1e6  # ns/bp -> Mbase/s
+        hks_build_throughput = f"{ref_total_bases / hks_build_time / 1e6:.1f}" if hks_build_time is not None else "?"
+        hks_row += f" & {hks_build_throughput} & {hks_build_mem / 2**30:.1f} & {hks_index_size / 2**30:.1f} & {throughput_mbps:.1f}"
     else:
         hks_row += f" & ? & ? & {hks_index_size / 2**30:.1f} & ?"
 hks_row += r" \\"
