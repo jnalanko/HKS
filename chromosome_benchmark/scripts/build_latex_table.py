@@ -38,23 +38,26 @@ k_list = [15,31,47,63]
 m_list = [15,22,31]
 t = 32
 query_total_bases = 3117292070 
-hks_index_size = 11150448137
+hks_index_size = None # Will be loaded from metadata on disk
 
-log_base_dir = "./final_logs"
+log_base_dir = "./preprint_results"
 
 # Parse index sizes from index_sizes.txt
-# Format: -rw-r--r-- 1 user group SIZE month day time ./kraken_k{k}_m{m}/hash.k2d
 index_sizes = {}  # (k, m) -> bytes
-path_re = re.compile(r'kraken_k(\d+)_m(\d+)/hash\.k2d')
+kraken_path_re = re.compile(r'kraken_k(\d+)_m(\d+)/hash\.k2d')
+hks_path_re = re.compile(r'index/CHM13-k63.hks')
 try:
     for line in open(f"{log_base_dir}/index_sizes.txt"):
         parts = line.split()
         if len(parts) < 9:
             continue
-        path_match = path_re.search(parts[8])
-        if path_match:
-            k, m = int(path_match.group(1)), int(path_match.group(2))
+        kraken_match = kraken_path_re.search(parts[-1])
+        hks_match = hks_path_re.search(parts[-1])
+        if kraken_match:
+            k, m = int(kraken_match.group(1)), int(kraken_match.group(2))
             index_sizes[(k, m)] = int(parts[4])
+        elif hks_match:
+           hks_index_size = int(parts[4])
 except Exception as e:
     sys.stderr.write(str(e) + "\n")
 
