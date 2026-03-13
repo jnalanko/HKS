@@ -37,7 +37,8 @@ def parse_stderr(lines):
 k_list = [15,31,47,63]
 m_list = [15,22,31]
 t = 32
-query_total_bases = 3117292070 
+query_total_bases = 5999424718 # hg002
+ref_total_bases = 3117292070 # CHM13
 hks_index_size = None # Will be loaded from metadata on disk
 
 log_base_dir = "./preprint_results"
