@@ -1,0 +1,34 @@
+[2026-03-10T10:16:54Z INFO  dks] Running dks version 0.1.2
+[2026-03-10T10:16:54Z INFO  dks] Loading the index ...
+[2026-03-10T10:17:02Z INFO  dks] Loaded index with k = 63
+[2026-03-10T10:17:02Z INFO  dks] Index loaded in 7.374107454 seconds
+[2026-03-10T10:17:02Z INFO  dks] Running queries from query/hg002v1.1_chr1.fasta.gz ...
+[2026-03-10T10:17:02Z INFO  dks] Preprocessing colors for 47-mer queries
+[2026-03-10T10:17:33Z INFO  dks] Running 47-mer queries
+[2026-03-10T10:18:22Z INFO  dks::parallel_queries] All input read
+[2026-03-10T10:18:22Z INFO  dks::parallel_queries] 496082716 k-mers in 496082808 base pairs queried in 48 seconds (excluding index loading time)
+[2026-03-10T10:18:22Z INFO  dks::parallel_queries] Query time per k-mer: 97.97399284316126 nanoseconds
+[2026-03-10T10:18:22Z INFO  dks::parallel_queries] Query time per base pair: 97.97397467359926 nanoseconds
+	Command being timed: "dks lookup -q query/hg002v1.1_chr1.fasta.gz -i index/CHM13-k63.dks -t 2 -k 47"
+	User time (seconds): 130.04
+	System time (seconds): 7.76
+	Percent of CPU this job got: 156%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:27.84
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11390448
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 594605
+	Voluntary context switches: 96932
+	Involuntary context switches: 62
+	Swaps: 0
+	File system inputs: 3361288
+	File system outputs: 32
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

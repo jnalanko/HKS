@@ -1,0 +1,4 @@
+        Command being timed: "sbwt build --input-list feature_tree/chromosome_fof.txt -t 64 -v -o CHM13/sbwt/CHM13-k63-added-dummies --temp-dir temp --in-memory --build-lcs -k 63 -m 200 -r --add-all-dummy-paths"
+
+        Elapsed (wall clock) time (h:mm:ss or m:ss): 2:21.43
+        Maximum resident set size (kbytes): 153047284

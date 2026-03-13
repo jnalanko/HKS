@@ -1,0 +1,80 @@
+[2026-03-07T10:32:52Z INFO  dks] Running dks version 0.1.2
+[2026-03-07T10:32:53Z INFO  dks] Loaded SBWT with 5574693264 k-mers
+[2026-03-07T10:32:54Z INFO  dks] Marking colors
+[2026-03-07T10:32:54Z INFO  dks::single_colored_kmers] Marking colors
+[2026-03-07T10:32:55Z INFO  dks::single_colored_kmers] Processing up to 2n bases, where n is the number of bases in the input.
+[2026-03-07T10:33:05Z INFO  dks::single_colored_kmers] 192570000 bases processed (total 192570000) (19.26 Mbases/sec)
+[2026-03-07T10:33:15Z INFO  dks::single_colored_kmers] 162736894 bases processed (total 355306894) (16.27 Mbases/sec)
+[2026-03-07T10:33:25Z INFO  dks::single_colored_kmers] 165666894 bases processed (total 520973788) (16.57 Mbases/sec)
+[2026-03-07T10:33:35Z INFO  dks::single_colored_kmers] 174020000 bases processed (total 694993788) (17.40 Mbases/sec)
+[2026-03-07T10:33:45Z INFO  dks::single_colored_kmers] 138120854 bases processed (total 833114642) (13.81 Mbases/sec)
+[2026-03-07T10:33:55Z INFO  dks::single_colored_kmers] 168980854 bases processed (total 1002095496) (16.90 Mbases/sec)
+[2026-03-07T10:34:05Z INFO  dks::single_colored_kmers] 180250000 bases processed (total 1182345496) (18.02 Mbases/sec)
+[2026-03-07T10:34:15Z INFO  dks::single_colored_kmers] 149900580 bases processed (total 1332246076) (14.99 Mbases/sec)
+[2026-03-07T10:34:25Z INFO  dks::single_colored_kmers] 175180580 bases processed (total 1507426656) (17.52 Mbases/sec)
+[2026-03-07T10:34:35Z INFO  dks::single_colored_kmers] 155262581 bases processed (total 1662689237) (15.53 Mbases/sec)
+[2026-03-07T10:34:45Z INFO  dks::single_colored_kmers] 181002581 bases processed (total 1843691818) (18.10 Mbases/sec)
+[2026-03-07T10:34:55Z INFO  dks::single_colored_kmers] 159461155 bases processed (total 2003152973) (15.95 Mbases/sec)
+[2026-03-07T10:35:05Z INFO  dks::single_colored_kmers] 183401155 bases processed (total 2186554128) (18.34 Mbases/sec)
+[2026-03-07T10:35:15Z INFO  dks::single_colored_kmers] 163130468 bases processed (total 2349684596) (16.31 Mbases/sec)
+[2026-03-07T10:35:25Z INFO  dks::single_colored_kmers] 185500468 bases processed (total 2535185064) (18.55 Mbases/sec)
+[2026-03-07T10:35:35Z INFO  dks::single_colored_kmers] 165719100 bases processed (total 2700904164) (16.57 Mbases/sec)
+[2026-03-07T10:35:45Z INFO  dks::single_colored_kmers] 185729100 bases processed (total 2886633264) (18.57 Mbases/sec)
+[2026-03-07T10:35:55Z INFO  dks::single_colored_kmers] 169141785 bases processed (total 3055775049) (16.91 Mbases/sec)
+[2026-03-07T10:36:05Z INFO  dks::single_colored_kmers] 190711785 bases processed (total 3246486834) (19.07 Mbases/sec)
+[2026-03-07T10:36:15Z INFO  dks::single_colored_kmers] 169446857 bases processed (total 3415933691) (16.94 Mbases/sec)
+[2026-03-07T10:36:25Z INFO  dks::single_colored_kmers] 169915649 bases processed (total 3585849340) (16.99 Mbases/sec)
+[2026-03-07T10:36:35Z INFO  dks::single_colored_kmers] 188188792 bases processed (total 3774038132) (18.82 Mbases/sec)
+[2026-03-07T10:36:45Z INFO  dks::single_colored_kmers] 171500783 bases processed (total 3945538915) (17.15 Mbases/sec)
+[2026-03-07T10:36:55Z INFO  dks::single_colored_kmers] 157557061 bases processed (total 4103095976) (15.76 Mbases/sec)
+[2026-03-07T10:37:05Z INFO  dks::single_colored_kmers] 189836278 bases processed (total 4292932254) (18.98 Mbases/sec)
+[2026-03-07T10:37:15Z INFO  dks::single_colored_kmers] 173330320 bases processed (total 4466262574) (17.33 Mbases/sec)
+[2026-03-07T10:37:25Z INFO  dks::single_colored_kmers] 179132590 bases processed (total 4645395164) (17.91 Mbases/sec)
+[2026-03-07T10:37:35Z INFO  dks::single_colored_kmers] 174138079 bases processed (total 4819533243) (17.41 Mbases/sec)
+[2026-03-07T10:37:45Z INFO  dks::single_colored_kmers] 174756829 bases processed (total 4994290072) (17.48 Mbases/sec)
+[2026-03-07T10:37:55Z INFO  dks::single_colored_kmers] 174033997 bases processed (total 5168324069) (17.40 Mbases/sec)
+[2026-03-07T10:38:05Z INFO  dks::single_colored_kmers] 176387643 bases processed (total 5344711712) (17.64 Mbases/sec)
+[2026-03-07T10:38:15Z INFO  dks::single_colored_kmers] 41120000 bases processed (total 5385831712) (4.11 Mbases/sec)
+[2026-03-07T10:38:25Z INFO  dks::single_colored_kmers] 0 bases processed (total 5385831712) (0.00 Mbases/sec)
+[2026-03-07T10:38:35Z INFO  dks::single_colored_kmers] 112607308 bases processed (total 5498439020) (11.26 Mbases/sec)
+[2026-03-07T10:38:45Z INFO  dks::single_colored_kmers] 11580000 bases processed (total 5510019020) (1.16 Mbases/sec)
+[2026-03-07T10:38:55Z INFO  dks::single_colored_kmers] 0 bases processed (total 5510019020) (0.00 Mbases/sec)
+[2026-03-07T10:39:05Z INFO  dks::single_colored_kmers] 114185621 bases processed (total 5624204641) (11.42 Mbases/sec)
+[2026-03-07T10:39:15Z INFO  dks::single_colored_kmers] 19060000 bases processed (total 5643264641) (1.91 Mbases/sec)
+[2026-03-07T10:39:25Z INFO  dks::single_colored_kmers] 90745275 bases processed (total 5734009916) (9.07 Mbases/sec)
+[2026-03-07T10:39:35Z INFO  dks::single_colored_kmers] 0 bases processed (total 5734009916) (0.00 Mbases/sec)
+[2026-03-07T10:39:45Z INFO  dks::single_colored_kmers] 151422164 bases processed (total 5885432080) (15.14 Mbases/sec)
+[2026-03-07T10:39:55Z INFO  dks::single_colored_kmers] 169041930 bases processed (total 6054474010) (16.90 Mbases/sec)
+[2026-03-07T10:40:05Z INFO  dks::single_colored_kmers] 93270000 bases processed (total 6147744010) (9.33 Mbases/sec)
+[2026-03-07T10:40:15Z INFO  dks::single_colored_kmers] 99031567 bases processed (total 6246775577) (9.90 Mbases/sec)
+[2026-03-07T10:40:16Z INFO  dks::single_colored_kmers] Bitpacking color id array
+[2026-03-07T10:41:16Z INFO  dks::single_colored_kmers] Colored 5574695322 sbwt positions
+[2026-03-07T10:41:16Z INFO  dks::single_colored_kmers] 1 sbwt positions left uncolored
+[2026-03-07T10:41:16Z INFO  dks::single_colored_kmers] Indexing LCS array
+[2026-03-07T10:41:16Z INFO  dks::single_colored_kmers] Building Color id wavelet tree
+[2026-03-07T10:41:16Z INFO  dks::single_colored_kmers] Color structure construction complete
+[2026-03-07T10:41:16Z INFO  dks] Writing to index/CHM13-k63.dks
+[2026-03-07T10:41:41Z INFO  dks] Index size on disk: 10.4 GiB
+	Command being timed: "dks build -k 63 -o index/CHM13-k63.dks -t 4 --external-memory temp -f feature_tree/chromosome_fof.txt --color-names feature_tree/chromosome_names.txt --hierarchy feature_tree/chromosome_tree.txt -b CHM13/sbwt/CHM13-k63-added-dummies.sbwt -l CHM13/sbwt/CHM13-k63-added-dummies.lcs"
+	User time (seconds): 1403.35
+	System time (seconds): 114.04
+	Percent of CPU this job got: 286%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 8:49.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 16339892
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 169
+	Minor (reclaiming a frame) page faults: 265791
+	Voluntary context switches: 611875
+	Involuntary context switches: 1061
+	Swaps: 0
+	File system inputs: 1995856
+	File system outputs: 21778576
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

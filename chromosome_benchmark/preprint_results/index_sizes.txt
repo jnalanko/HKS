@@ -1,0 +1,11 @@
+-rw-r--r-- 1 analanko hyad-all  1909261196 Mar  8 19:38 ./kraken_k15_m15/hash.k2d
+-rw-r--r-- 1 analanko hyad-all   372676052 Mar  8 19:40 ./kraken_k31_m15/hash.k2d
+-rw-r--r-- 1 analanko hyad-all  2407693196 Mar  8 19:46 ./kraken_k31_m22/hash.k2d
+-rw-r--r-- 1 analanko hyad-all 14365086020 Mar  8 20:13 ./kraken_k31_m31/hash.k2d
+-rw-r--r-- 1 analanko hyad-all   207273720 Mar  8 20:15 ./kraken_k47_m15/hash.k2d
+-rw-r--r-- 1 analanko hyad-all  1009144716 Mar  8 20:18 ./kraken_k47_m22/hash.k2d
+-rw-r--r-- 1 analanko hyad-all  1610267824 Mar  8 20:21 ./kraken_k47_m31/hash.k2d
+-rw-r--r-- 1 analanko hyad-all   151023940 Mar  8 20:23 ./kraken_k63_m15/hash.k2d
+-rw-r--r-- 1 analanko hyad-all   621794772 Mar  8 20:26 ./kraken_k63_m22/hash.k2d
+-rw-r--r-- 1 analanko hyad-all   876750292 Mar  8 20:28 ./kraken_k63_m31/hash.k2d
+-rw-r--r-- 1 analanko hyad-all 11150448137 12. 3. 22:48 ./index/CHM13-k63.hks

@@ -1,0 +1,45 @@
+[2026-03-07T10:51:11Z INFO  dks] Running dks version 0.1.2
+[2026-03-07T10:51:12Z INFO  dks] Loaded SBWT with 5574693264 k-mers
+[2026-03-07T10:51:13Z INFO  dks] Marking colors
+[2026-03-07T10:51:13Z INFO  dks::single_colored_kmers] Marking colors
+[2026-03-07T10:51:13Z INFO  dks::single_colored_kmers] Processing up to 2n bases, where n is the number of bases in the input.
+[2026-03-07T10:51:23Z INFO  dks::single_colored_kmers] 706363788 bases processed (total 706363788) (70.64 Mbases/sec)
+[2026-03-07T10:51:33Z INFO  dks::single_colored_kmers] 641152288 bases processed (total 1347516076) (64.11 Mbases/sec)
+[2026-03-07T10:51:43Z INFO  dks::single_colored_kmers] 691066897 bases processed (total 2038582973) (69.11 Mbases/sec)
+[2026-03-07T10:51:53Z INFO  dks::single_colored_kmers] 753311191 bases processed (total 2791894164) (75.33 Mbases/sec)
+[2026-03-07T10:52:03Z INFO  dks::single_colored_kmers] 759636384 bases processed (total 3551530548) (75.96 Mbases/sec)
+[2026-03-07T10:52:13Z INFO  dks::single_colored_kmers] 675855428 bases processed (total 4227385976) (67.59 Mbases/sec)
+[2026-03-07T10:52:23Z INFO  dks::single_colored_kmers] 729822756 bases processed (total 4957208732) (72.98 Mbases/sec)
+[2026-03-07T10:52:33Z INFO  dks::single_colored_kmers] 485337966 bases processed (total 5442546698) (48.53 Mbases/sec)
+[2026-03-07T10:52:43Z INFO  dks::single_colored_kmers] 200717943 bases processed (total 5643264641) (20.07 Mbases/sec)
+[2026-03-07T10:52:53Z INFO  dks::single_colored_kmers] Bitpacking color id array
+[2026-03-07T10:53:52Z INFO  dks::single_colored_kmers] Colored 5574695322 sbwt positions
+[2026-03-07T10:53:52Z INFO  dks::single_colored_kmers] 1 sbwt positions left uncolored
+[2026-03-07T10:53:52Z INFO  dks::single_colored_kmers] Indexing LCS array
+[2026-03-07T10:53:52Z INFO  dks::single_colored_kmers] Building Color id wavelet tree
+[2026-03-07T10:53:52Z INFO  dks::single_colored_kmers] Color structure construction complete
+[2026-03-07T10:53:52Z INFO  dks] Writing to index/CHM13-k63.dks
+[2026-03-07T10:54:20Z INFO  dks] Index size on disk: 10.4 GiB
+	Command being timed: "dks build -k 63 -o index/CHM13-k63.dks -t 32 --external-memory temp -f feature_tree/chromosome_fof.txt --color-names feature_tree/chromosome_names.txt --hierarchy feature_tree/chromosome_tree.txt -b CHM13/sbwt/CHM13-k63-added-dummies.sbwt -l CHM13/sbwt/CHM13-k63-added-dummies.lcs"
+	User time (seconds): 1832.46
+	System time (seconds): 49.42
+	Percent of CPU this job got: 996%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 3:08.76
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 16340040
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 194141
+	Voluntary context switches: 506710
+	Involuntary context switches: 1578
+	Swaps: 0
+	File system inputs: 659968
+	File system outputs: 21778304
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

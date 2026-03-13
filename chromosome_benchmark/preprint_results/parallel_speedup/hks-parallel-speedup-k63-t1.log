@@ -1,0 +1,32 @@
+[2026-03-10T10:58:17Z INFO  dks] Running dks version 0.1.2
+[2026-03-10T10:58:17Z INFO  dks] Loading the index ...
+[2026-03-10T10:58:30Z INFO  dks] Loaded index with k = 63
+[2026-03-10T10:58:30Z INFO  dks] Index loaded in 13.452953744 seconds
+[2026-03-10T10:58:30Z INFO  dks] Running queries from query/hg002v1.1_chr1.fasta.gz ...
+[2026-03-10T11:00:06Z INFO  dks::parallel_queries] All input read
+[2026-03-10T11:00:06Z INFO  dks::parallel_queries] 496082684 k-mers in 496082808 base pairs queried in 95 seconds (excluding index loading time)
+[2026-03-10T11:00:06Z INFO  dks::parallel_queries] Query time per k-mer: 193.15896362752304 nanoseconds
+[2026-03-10T11:00:06Z INFO  dks::parallel_queries] Query time per base pair: 193.15891534584281 nanoseconds
+	Command being timed: "dks lookup -q query/hg002v1.1_chr1.fasta.gz -i index/CHM13-k63.dks -t 1 -k 63"
+	User time (seconds): 100.02
+	System time (seconds): 13.09
+	Percent of CPU this job got: 103%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:49.44
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 11389664
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 296
+	Minor (reclaiming a frame) page faults: 888089
+	Voluntary context switches: 99943
+	Involuntary context switches: 53
+	Swaps: 0
+	File system inputs: 15732624
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
