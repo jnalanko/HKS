@@ -639,7 +639,7 @@ fn main() {
             let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
             let writer = OutputWriter::new(stdout, seq_names, color_names, index.root_id(), report_misses, !no_header);
 
-            let batch_size = 10000;
+            let batch_size = 1000000;
             log::info!("Running queries from {} ...", query_path.display());
             run_queries(n_threads, reader, index, batch_size, k, writer);
         },

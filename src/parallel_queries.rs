@@ -293,6 +293,7 @@ pub fn lookup_parallel<A: ColoredKmerLookupAlgorithm + Send + Sync>(n_threads: u
                 crate::util::process_kmers_in_pieces(seq, k, batch_size, |piece_idx, piece: &[u8]|{
                     batch.push(piece, piece_idx > 0);
 
+                    //log::info!("Pushing batch of size {} ({} batches in channel)", batch.len(), batch_send.len());
                     if batch.len() >= b {
                         // Swap the current batch with an empty batch, and send it to processing
                         let next_batch_id = batch.batch_id + 1;
