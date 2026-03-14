@@ -13,9 +13,9 @@ TSV = "preprint_results/node_stats.tsv"
 OUT = "plots/node_stats.pdf"
 
 plt.rcParams.update({
-    "axes.labelsize":  20,
-    "xtick.labelsize": 20,
-    "ytick.labelsize": 20,
+    "axes.labelsize":  16,
+    "xtick.labelsize": 16,
+    "ytick.labelsize": 16,
 })
 
 
