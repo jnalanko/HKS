@@ -7,7 +7,7 @@ A colored k-mer index for querying which input dataset (color) each k-mer origin
 HKS assigns a **color** to each k-mer in an index.
 
 - **Hierarchical colors** via a Lowest Common Ancestor (LCA) tree, allowing taxonomic or other organizational relationships between datasets.
-- **Variable-k queries**: build at k, query at any s ≤ k.
+- **Variable-k queries**: Query from any k-mer length k ≤ s, with s set at build time.
 
 ## Installation
 
