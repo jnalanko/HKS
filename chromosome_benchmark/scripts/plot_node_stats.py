@@ -74,9 +74,9 @@ axes[1].set_xlabel(r"$k$")
 axes[1].set_ylabel("% of Total")
 axes[1].set_xlim(1, 63)
 axes[1].set_ylim(0, 100)
-fig.subplots_adjust(bottom=0.35)
+fig.subplots_adjust(bottom=0.36)
 handles, labels = axes[1].get_legend_handles_labels()
-fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.015),
-           ncol=10, fontsize=14)
+fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.010),
+           ncol=8, fontsize=14)
 plt.savefig(OUT, dpi=150)
 print(f"Saved {OUT}")
