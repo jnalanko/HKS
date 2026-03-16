@@ -1,0 +1,7 @@
+2 4
+clade1
+root
+example/A.fasta clade1
+example/B.fasta clade1
+clade1 root
+example/C.fasta root

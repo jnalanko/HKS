@@ -1,13 +1,11 @@
 # HKS: Hierarchical K-mer Sets
 
-A colored k-mer index for querying which input dataset (color) each k-mer originates from. Built on top of the [SBWT](sbwt-rs-cli/api/README.md) (Spectral Burrows-Wheeler Transform) for compact, high-speed DNA k-mer indexing.
+HKS is a variable-length k-mer index with hierarchical color labeling. The input consists of: 
 
-## Overview
+* A set of k-mer sets, one for each color.
+* A color hierarchy described as a tree where the colors are the leaves. For example, a phylogenetic tree.
 
-HKS assigns a **color** to each k-mer in an index.
-
-- **Hierarchical colors** via a Lowest Common Ancestor (LCA) tree, allowing taxonomic or other organizational relationships between datasets.
-- **Variable-k queries**: Query from any k-mer length k ≤ s, with s set at build time.
+The index is build for a maximum s-mer length s, and allows queries for *any* k-mer length up to s. The query takes a sequence, and prints a file in bed-format annotating each input k-mer with the lowest common ancestor of the colors of that k-mer in the hierarchy.
 
 ## Installation
 
@@ -25,29 +23,57 @@ The binary is `target/release/hks`.
 
 ### Build an index
 
-Provide a text file listing one input FASTA/FASTQ path per line, one file per color.
-The `example/` directory contains three single-color FASTA files and a file-of-files pointing to them:
+The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per color. Both DNA strands are indexed. By default, the names of the colors are the file paths of the input FASTA/FASTQ files. 
+
+The `example/` directory a tiny example dataset with three files A.fna, B.fna. C.fna. To index it, run:
 
 ```bash
 hks build \
-  --k 10 \
+  -s 10 \
   --file-colors example/file_of_files.txt \
+  --hierarchy example/hierarchy.txt \
   --output index.hks
 ```
 
-Key options:
+This indexes the data with the following color hierarchy.
 
-| Flag | Description |
-|------|-------------|
-| `--k` | K-mer length |
-| `--file-colors` | Text file with one FASTA/FASTQ path per color |
-| `--sequence-colors` | FASTA/FASTQ where each sequence is one color |
-| `--output` | Output index path |
-| `--hierarchy` | Optional hierarchy file defining a tree with colors on the leaves |
-| `--color-names` | Optional file with one color name per line |
-| `--external-memory` | Directory for temporary files (reduces contruction RAM usage) |
-| `--forward-only` | Do not include reverse complements |
-| `--n-threads` | Number of threads |
+```
+    root
+   /    \
+ clade1   C.fna
+ /    \
+A.fna  B.fna
+```
+
+The full build options are as follows:
+
+```
+Usage: hks build [OPTIONS] -s <S> --output <OUTPUT>
+
+Options:
+  -s <S>                            Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
+  -o, --output <OUTPUT>             Output filename
+      --external-memory <TEMP_DIR>  Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
+      --forward-only                Do not add reverse complemented k-mers
+  -t, --n-threads <N_THREADS>       Number of parallel threads [default: 4]
+  -h, --help                        Print help
+
+Input:
+  -f, --file-colors <FILE_COLORS>
+          A file with one fasta/fastq filename per line, one per color
+      --sequence-colors <SEQUENCE_COLORS>
+          Give input as a single file, one sequence per color
+  -u, --unitigs <UNITIGS>
+          Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
+      --color-names <COLOR_NAMES_FILE>
+          Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names.
+      --hierarchy <HIERARCHY>
+          Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root).
+
+Advanced use:
+  -b, --sbwt-path <SBWT_PATH>  Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
+  -l, --lcs-path <LCS_PATH>    Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
+```
 
 ### Query k-mers
 
