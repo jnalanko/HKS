@@ -26,7 +26,7 @@ enum ColorIndex { // For now just one variant, might add more later
     FixedK(FixedKColorIndex),
 }
 
-const DKS_FILE_ID: [u8; 8] = *b"dks0.1.2";
+const HKS_FILE_ID: [u8; 8] = *b"hks0.1.2";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
 
@@ -34,7 +34,7 @@ impl ColorIndex {
     fn serialize(&self, out: &mut impl Write) {
         match self {
             ColorIndex::FixedK(index) => {
-                out.write_all(&DKS_FILE_ID).unwrap();
+                out.write_all(&HKS_FILE_ID).unwrap();
                 out.write_all(&FIXED_INDEX_TYPE_ID).unwrap();
                 index.serialize(out);
             },
@@ -44,7 +44,7 @@ impl ColorIndex {
     fn load(input: &mut impl Read) -> Self {
         let mut file_id = [0_u8; 8];
         input.read_exact(&mut file_id).unwrap();
-        assert_eq!(file_id, DKS_FILE_ID, "Invalid DKS file ID");
+        assert_eq!(file_id, HKS_FILE_ID, "Invalid DKS file ID");
 
         let mut type_id = [0_u8; 4];
         input.read_exact(&mut type_id).unwrap();
