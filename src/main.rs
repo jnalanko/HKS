@@ -285,7 +285,7 @@ pub enum Subcommands {
         index: PathBuf,
     },
 
-    #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= s <= k")]
+    #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= k <= s")]
     NodeStats {
         #[arg(help = "Path to the index file", long, required = true)]
         index: PathBuf,
