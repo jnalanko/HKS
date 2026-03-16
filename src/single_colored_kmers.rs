@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::ops::Range;
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
@@ -13,7 +12,6 @@ use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStr
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 use crate::traits::*;
-use crate::util::for_each_run_with_key;
 
 /// A rooted color hierarchy tree together with a name for every node.
 /// Leaves occupy IDs 0..n_leaves; internal nodes (including root) occupy n_leaves..n_nodes.
@@ -425,7 +423,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     }
 
     pub fn get_color(&self, colex: usize) -> Option<usize> {
-        assert!(colex <= self.sbwt.n_sets());
+        assert!(colex < self.sbwt.n_sets());
         self.colors.get_color(colex)
     }
     
