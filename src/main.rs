@@ -500,7 +500,7 @@ fn main() {
     }
     env_logger::init();
 
-    log::info!("Running dks version {}", env!("CARGO_PKG_VERSION"));
+    log::info!("Running hks version {}", env!("CARGO_PKG_VERSION"));
 
     let args = Cli::parse();
 
