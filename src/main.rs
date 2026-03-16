@@ -254,7 +254,7 @@ pub enum Subcommands {
         #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "color-names", help_heading = "Input")]
         color_names_file: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root).", long = "hierarchy", help_heading = "Input")]
+        #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
         #[arg(help = "Hidden option: After building, turn all \"none\" colors into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
