@@ -485,7 +485,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
         let color_ids = A::new(sbwt.n_sets());
         let si = StreamingIndex::new(sbwt, lcs);
-        let n_colors = input_streams.len();
+        let n_colors = color_hierarchy.n_nodes();
 
         let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
         let n_bases_processed = AtomicU64::new(0);
