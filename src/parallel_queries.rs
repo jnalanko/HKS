@@ -26,16 +26,6 @@ pub struct OutputWriter<W: Write> {
 
 impl<W: Write> OutputWriter<W> {
     pub fn new(out: W, seq_names: Option<Vec<String>>, color_names: Option<Vec<String>>, root_id: usize, report_misses: bool, print_header: bool) -> Self {
-        if let Some(names) = &color_names {
-            for name in names {
-                if name == "none" {
-                    panic!("Error: can not use \"none\" as a color name because it is a reserved name");
-                }
-                if name == "root" {
-                    panic!("Error: can not use \"root\" as a color name because it is a reserved name");
-                }
-            }
-        }
         Self { out, seq_names, color_names, root_id, report_misses, print_header }
     }
 

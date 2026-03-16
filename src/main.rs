@@ -26,6 +26,8 @@ enum ColorIndex { // For now just one variant, might add more later
     FixedK(FixedKColorIndex),
 }
 
+static RESERVED_COLOR_NAMES: &[&str] = &["none", "root"];
+
 const HKS_FILE_ID: [u8; 8] = *b"hks0.1.2";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
@@ -105,7 +107,12 @@ impl ColorIndex {
 
 // Returns the LcaTree and the internal node names (in node-ID order, after all leaf IDs).
 fn read_hierarchy_file(path: &PathBuf, leaf_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
-    use std::io::BufRead;
+
+    for name in leaf_names.iter() {
+        if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
+            panic!("Error: can not use \"{}\" as a color name because it is a reserved name", name);
+        }
+    }
 
     let mut name_to_id = HashMap::<&str, usize>::new();
     for (id, name) in leaf_names.iter().enumerate() {
