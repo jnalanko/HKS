@@ -208,8 +208,8 @@ pub struct Cli {
 pub enum Subcommands {
     #[command(arg_required_else_help = true)]
     Build {
-        #[arg(short, required = true)]
-        k: usize,
+        #[arg(short, required = true, value_parser = clap::value_parser!(u64).range(1..))]
+        k: u64,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
         file_colors: Option<PathBuf>,
@@ -229,8 +229,8 @@ pub enum Subcommands {
         #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
         forward_only: bool,
 
-        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
-        n_threads: usize,
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
 
         #[arg(help = "Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths", short = 'b', long, help_heading = "Advanced use")]
         sbwt_path: Option<PathBuf>,
@@ -257,11 +257,11 @@ pub enum Subcommands {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
-        n_threads: usize,
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
 
-        #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false)]
-        k: Option<usize>,
+        #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..))]
+        k: Option<u64>,
 
         #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
         report_color_names: bool,
@@ -275,8 +275,8 @@ pub enum Subcommands {
         #[arg(help = "Do not print the header line.", long = "no-header")]
         no_header: bool,
 
-        #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced")]
-        batch_size: usize,
+        #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
+        batch_size: u64,
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -506,6 +506,9 @@ fn main() {
 
     match args.command {
         Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, k, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+
+            let (k, n_threads) = (k as usize, n_threads as usize);
+
             // Create output directory if does not exist
             std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
 
@@ -620,6 +623,9 @@ fn main() {
         },
 
         Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_color_names, report_query_names, report_misses, no_header, batch_size} => {
+
+            let (n_threads, batch_size) = (n_threads as usize, batch_size as usize);
+            
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -628,7 +634,7 @@ fn main() {
             let index = ColorIndex::load(&mut index_input);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
-            let k = k.unwrap_or(index.k());
+            let k = k.unwrap_or(index.k() as u64) as usize;
             if k > index.k() {
                 panic!("Error: query k = {} larger than indexing k = {}", k, index.k());
             }
