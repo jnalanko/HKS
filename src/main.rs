@@ -26,6 +26,10 @@ enum ColorIndex { // For now just one variant, might add more later
     FixedK(FixedKColorIndex),
 }
 
+// If these names change, remember to also update the hardcoded mention in the
+// help text of the --color-names argument in the Build subcommand below.
+// The duplication exists because Rust's concat!() only accepts literals, so
+// we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none", "root"];
 
 const HKS_FILE_ID: [u8; 8] = *b"hks0.1.2";
@@ -245,7 +249,9 @@ pub enum Subcommands {
         #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", short, long, help_heading = "Advanced use")]
         lcs_path: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names.", long = "color-names", help_heading = "Input")]
+        // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
+        // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
+        #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "color-names", help_heading = "Input")]
         color_names_file: Option<PathBuf>,
 
         #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root).", long = "hierarchy", help_heading = "Input")]
