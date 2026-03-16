@@ -19,6 +19,7 @@ mod util;
 mod wavelet_tree;
 mod traits;
 mod color_storage;
+mod smooth;
 
 type FixedKColorIndex = SingleColoredKmers<LcsWrapper, SimpleColorStorage>;
 
@@ -26,7 +27,7 @@ enum ColorIndex { // For now just one variant, might add more later
     FixedK(FixedKColorIndex),
 }
 
-const DKS_FILE_ID: [u8; 8] = *b"dks0.1.2";
+const HKS_FILE_ID: [u8; 8] = *b"hks0.2.0";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
 
@@ -34,7 +35,7 @@ impl ColorIndex {
     fn serialize(&self, out: &mut impl Write) {
         match self {
             ColorIndex::FixedK(index) => {
-                out.write_all(&DKS_FILE_ID).unwrap();
+                out.write_all(&HKS_FILE_ID).unwrap();
                 out.write_all(&FIXED_INDEX_TYPE_ID).unwrap();
                 index.serialize(out);
             },
@@ -44,7 +45,10 @@ impl ColorIndex {
     fn load(input: &mut impl Read) -> Self {
         let mut file_id = [0_u8; 8];
         input.read_exact(&mut file_id).unwrap();
-        assert_eq!(file_id, DKS_FILE_ID, "Invalid DKS file ID");
+        if file_id == *b"dks0.1.2" {
+            panic!("This index was built with an older version (DKS). Please rebuild with the current version of HKS.");
+        }
+        assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID");
 
         let mut type_id = [0_u8; 4];
         input.read_exact(&mut type_id).unwrap();
@@ -55,7 +59,7 @@ impl ColorIndex {
                 index
             },
             _ => {
-                panic!("Unknown index type ID in DKS file: {}", String::from_utf8_lossy(&type_id));
+                panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
             }
         }
     }
@@ -180,7 +184,7 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     hierarchy: ColorHierarchy,
     nones_to_multiples: bool,
 ) {
-    log::info!("Marking colors");
+    log::info!("Marking categories");
     let mut index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy);
     if nones_to_multiples {
         log::info!("Turning Nones into roots");
@@ -208,13 +212,13 @@ pub struct Cli {
 pub enum Subcommands {
     #[command(arg_required_else_help = true)]
     Build {
-        #[arg(short, required = true)]
-        k: usize,
+        #[arg(short = 'k', long = "max-k", required = true, help = "Maximum k-mer length (s). The index supports queries at any k ≤ s.")]
+        max_k: usize,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
+        #[arg(help = "A file with one fasta/fastq filename per line, one per category", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
         file_colors: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single file, one sequence per color", short, long, help_heading = "Input", conflicts_with = "file_colors")]
+        #[arg(help = "Give input as a single file, one sequence per category", short, long, help_heading = "Input", conflicts_with = "file_colors")]
         sequence_colors: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
@@ -238,13 +242,13 @@ pub enum Subcommands {
         #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", short, long, help_heading = "Advanced use")]
         lcs_path: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names.", long = "color-names", help_heading = "Input")]
+        #[arg(help = "Optional: a file with one category name per line, in the same order as the input files. Defaults to using the input filenames as names.", long = "color-names", help_heading = "Input")]
         color_names_file: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root).", long = "hierarchy", help_heading = "Input")]
+        #[arg(help = "Optional: a file describing the category hierarchy tree. Defaults to a star (all categories as children of a single root).", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Hidden option: After building, turn all \"none\" colors into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
+        #[arg(help = "Hidden option: After building, turn all \"none\" categories into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
         none_to_multiple: bool,
 
     },
@@ -260,16 +264,16 @@ pub enum Subcommands {
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
 
-        #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false)]
+        #[arg(help = "Query k-mer length. Must be ≤ max-k from index construction. If not given, defaults to max-k.", short, required = false)]
         k: Option<usize>,
 
-        #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
+        #[arg(help = "Print category names instead of numeric IDs. Multi-matching k-mers are reported as their hierarchy node name.", long = "report-color-names")]
         report_color_names: bool,
 
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
         report_query_names: bool,
 
-        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-color-names is set.", long = "report-misses")]
+        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-color-names is set. Required for smoothing.", long = "report-misses")]
         report_misses: bool,
 
         #[arg(help = "Do not print the header line.", long = "no-header")]
@@ -279,22 +283,37 @@ pub enum Subcommands {
         batch_size: usize,
     },
 
-    #[command(about = "Print statistics about an index file.")]
+    #[command(arg_required_else_help = true, about = "Print statistics about an index file.")]
     Stats {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
     },
 
-    #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= s <= k")]
+    #[command(arg_required_else_help = true, about = "Print the number of k-mers assigned to each node in the hierarchy, for all 1 <= k <= max-k")]
     NodeStats {
         #[arg(help = "Path to the index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Print color names instead of color ids", long = "report-color-names")]
+        #[arg(help = "Print category names instead of numeric IDs", long = "report-color-names")]
         report_color_names: bool,
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
+    },
+
+    #[command(arg_required_else_help = true, about = "Hierarchy-aware smoothing of lookup output. Resolves non-specific and novel k-mer assignments using flanking sequence context.")]
+    Smooth {
+        #[arg(help = "Path to the HKS index file (used to load the hierarchy)", short, long, required = true)]
+        index: PathBuf,
+
+        #[arg(help = "Input TSV file from 'hks lookup' (default: stdin). Must include --report-misses output.", short = 'i', long)]
+        input: Option<PathBuf>,
+
+        #[arg(help = "Output TSV file (default: stdout)", short, long)]
+        output: Option<PathBuf>,
+
+        #[arg(help = "Maximum gap (in bp) between intervals for smoothing window detection", long = "max-gap", default_value = "1000")]
+        max_gap: u64,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -355,7 +374,7 @@ fn run_queries<W: RunWriter>(n_threads: usize, reader: DynamicFastXReader, index
     let reader = DynamicFastXReaderWrapper { inner: reader };
     let ColorIndex::FixedK(index) = index;
     if k < index.k() {
-        log::info!("Preprocessing colors for {}-mer queries", k);
+        log::info!("Preprocessing categories for {}-mer queries", k);
         let s_index = SingleColoredKmersShort::new(index, k, n_threads);
         log::info!("Running {}-mer queries", k);
         parallel_queries::lookup_parallel(n_threads, reader, &s_index, batch_size, k, writer);
@@ -377,7 +396,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     index.build_sbwt_select();
 
     let stdout_mutex = std::sync::Mutex::new(std::io::BufWriter::new(std::io::stdout()));
-    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "s\tcolor\tcount").unwrap(); h.flush().unwrap(); }
+    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "s\tcategory\tcount").unwrap(); h.flush().unwrap(); }
 
     let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
     thread_pool.install(|| {
@@ -404,7 +423,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
 // Reads a color names file with one name per line.
 fn read_color_names_file(path: &PathBuf) -> Vec<String> {
     BufReader::new(File::open(path)
-        .unwrap_or_else(|e| panic!("Could not open color names file {}: {e}", path.display())))
+        .unwrap_or_else(|e| panic!("Could not open category names file {}: {e}", path.display())))
         .lines()
         .map(|l| l.unwrap())
         .collect()
@@ -500,14 +519,18 @@ fn main() {
     }
     env_logger::init();
 
-    log::info!("Running dks version {}", env!("CARGO_PKG_VERSION"));
+    log::info!("Running hks version {}", env!("CARGO_PKG_VERSION"));
 
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, k, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, max_k: k, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
             // Create output directory if does not exist
             std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+
+            if k == 0 {
+                panic!("Error: --max-k must be at least 1");
+            }
 
             let add_rev_comps = !forward_only;
 
@@ -575,7 +598,7 @@ fn main() {
                 let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
                     let names = read_color_names_file(names_path);
                     if names.len() != input_paths.len() {
-                        panic!("Color names file has {} names but there are {} input files", names.len(), input_paths.len());
+                        panic!("Category names file has {} names but there are {} input files", names.len(), input_paths.len());
                     }
                     names
                 } else {
@@ -590,7 +613,7 @@ fn main() {
                 let sc = sequence_colors.unwrap();
 
                 let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
-                    log::info!("Reading color names from {}", names_path.display());
+                    log::info!("Reading category names from {}", names_path.display());
                     read_color_names_file(names_path)
                 } else {
                     log::info!("Reading sequence names from {}", sc.display());
@@ -629,6 +652,9 @@ fn main() {
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let k = k.unwrap_or(index.k());
+            if k == 0 {
+                panic!("Error: query k must be at least 1");
+            }
             if k > index.k() {
                 panic!("Error: query k = {} larger than indexing k = {}", k, index.k());
             }
@@ -653,16 +679,16 @@ fn main() {
 
             let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
-            println!("k:                     {}", index.k());
-            println!("Number of colors in hierarchy:      {}", index.n_colors_in_hierarchy());
+            println!("Max k:                 {}", index.k());
+            println!("Categories in hierarchy: {}", index.n_colors_in_hierarchy());
             println!("Number of k-mers:      {}", index.n_kmers());
-            println!("Colored SBWT positions: {}", stats.colored);
-            println!("Uncolored SBWT positions:  {}", stats.uncolored);
-            println!("Color run min length:  {}", stats.color_run_min);
-            println!("Color run max length:  {}", stats.color_run_max);
-            println!("Color run mean length: {:.2}", stats.color_run_mean);
+            println!("Labeled SBWT positions:   {}", stats.colored);
+            println!("Unlabeled SBWT positions: {}", stats.uncolored);
+            println!("Label run min length:  {}", stats.color_run_min);
+            println!("Label run max length:  {}", stats.color_run_max);
+            println!("Label run mean length: {:.2}", stats.color_run_mean);
             println!();
-            println!("{:<10}  {}", "Count", "Color name");
+            println!("{:<10}  {}", "Count", "Category");
             println!("{:<10}  {}", stats.uncolored, "none");
             for (id, name) in index.color_names().iter().enumerate() {
                 println!("{:<10}  {}", stats.color_counts[id], name);
@@ -674,6 +700,52 @@ fn main() {
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
             compute_node_stats(index, report_color_names, n_threads);
+        },
+
+        Subcommands::Smooth { index: index_path, input, output, max_gap } => {
+            log::info!("Loading the index (for hierarchy) ...");
+            let mut index_input = BufReader::new(File::open(&index_path)
+                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+            let index = ColorIndex::load(&mut index_input);
+
+            let ColorIndex::FixedK(ref inner) = index;
+            let tree = inner.color_hierarchy();
+            let names = inner.color_names();
+            let root_id = tree.root();
+
+            // Open input
+            let input_reader: Box<dyn std::io::Read> = match &input {
+                Some(p) => {
+                    log::info!("Reading from {}", p.display());
+                    Box::new(File::open(p)
+                        .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", p.display())))
+                }
+                None => {
+                    log::info!("Reading from stdin");
+                    Box::new(std::io::stdin())
+                }
+            };
+
+            // Open output
+            let output_writer: Box<dyn std::io::Write> = match &output {
+                Some(p) => {
+                    log::info!("Writing to {}", p.display());
+                    Box::new(File::create(p)
+                        .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", p.display())))
+                }
+                None => Box::new(std::io::stdout()),
+            };
+
+            let stats = smooth::run_smooth(input_reader, output_writer, tree, names, root_id, max_gap);
+
+            log::info!(
+                "Done. queries={}, intervals: in={}, smoothed={}, merged={}, out={}",
+                stats.reads_processed,
+                stats.intervals_in,
+                stats.intervals_smoothed,
+                stats.intervals_merged,
+                stats.intervals_out,
+            );
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path} => {

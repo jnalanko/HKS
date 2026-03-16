@@ -145,6 +145,26 @@ impl LcaTree {
         self.parent[node]
     }
 
+    /// Returns true if `potential_ancestor` lies on the path from `node` to the root.
+    /// A node is considered its own ancestor.
+    pub fn is_ancestor(&self, node: usize, potential_ancestor: usize) -> bool {
+        self.lca(node, potential_ancestor) == potential_ancestor
+    }
+
+    /// Walk from `node` to the root, returning every node on the path (inclusive).
+    pub fn ancestors(&self, node: usize) -> Vec<usize> {
+        assert!(node < self.n);
+        let mut result = vec![node];
+        let mut cur = node;
+        loop {
+            let p = self.parent[cur];
+            if p == cur { break; } // reached root (already in result)
+            result.push(p);
+            cur = p;
+        }
+        result
+    }
+
     // --- Serialization ---
 
     /// Write the tree to `w` in a simple binary format:
@@ -366,5 +386,34 @@ mod tests {
     fn error_zero_nodes() {
         let err = LcaTree::new(0, vec![]).unwrap_err();
         assert!(err.contains("at least one"), "{err}");
+    }
+
+    #[test]
+    fn is_ancestor_binary_tree() {
+        let t = binary_tree();
+        // Node 4 is parent of 0 and 1
+        assert!(t.is_ancestor(0, 4));
+        assert!(t.is_ancestor(1, 4));
+        // Node 6 (root) is ancestor of everything
+        assert!(t.is_ancestor(0, 6));
+        assert!(t.is_ancestor(4, 6));
+        // Every node is its own ancestor
+        assert!(t.is_ancestor(3, 3));
+        assert!(t.is_ancestor(6, 6));
+        // Leaves are not ancestors of internal nodes
+        assert!(!t.is_ancestor(4, 0));
+        assert!(!t.is_ancestor(6, 0));
+        // Nodes on different branches are not ancestors of each other
+        assert!(!t.is_ancestor(0, 5));
+        assert!(!t.is_ancestor(2, 4));
+    }
+
+    #[test]
+    fn ancestors_path() {
+        let t = binary_tree();
+        assert_eq!(t.ancestors(0), vec![0, 4, 6]);
+        assert_eq!(t.ancestors(3), vec![3, 5, 6]);
+        assert_eq!(t.ancestors(6), vec![6]); // root
+        assert_eq!(t.ancestors(4), vec![4, 6]);
     }
 }

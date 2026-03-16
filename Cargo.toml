@@ -1,8 +1,8 @@
 [package]
 name = "hks"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
-description = "A data structure for querying hierarchical k-mer sets"
+description = "Exact hierarchical variable-length k-mer annotation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

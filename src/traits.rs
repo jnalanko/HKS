@@ -12,7 +12,7 @@ pub trait ColorStorage {
     fn get_color(&self, colex: usize) -> Option<usize>;
     fn set_color(&mut self, colex: usize, value: Option<usize>);
     fn get_color_of_range(&self, range: Range<usize>, color_hierarchy: &LcaTree) -> Option<usize>;
-    fn substite_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize);
+    fn substitute_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize);
 }
 
 pub trait MySerialize {

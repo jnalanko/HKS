@@ -66,7 +66,7 @@ impl ColorStorage for SimpleColorStorage {
         lca
     }
 
-    fn substite_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize) {
+    fn substitute_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize) {
         let n = self.len(); // Number of elements
         let n_bits = n * self.bits_per_color;
         let total_words = n_bits.next_multiple_of(64) / 64;

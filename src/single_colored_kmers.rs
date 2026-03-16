@@ -425,7 +425,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     }
 
     pub fn get_color(&self, colex: usize) -> Option<usize> {
-        assert!(colex <= self.sbwt.n_sets());
+        assert!(colex < self.sbwt.n_sets(), "get_color: colex {} out of bounds (n_sets = {})", colex, self.sbwt.n_sets());
         self.colors.get_color(colex)
     }
     
@@ -572,7 +572,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         })});
 
         // Compress color_ids into a BitVec
-        log::info!("Bitpacking color id array");
+        log::info!("Bitpacking category id array");
         let mut compressed_colors = SimpleColorStorage::new(sbwt.n_sets(), n_colors);
         let mut total_some_count = 0_usize;
         let mut total_none_count = 0_usize;
@@ -585,8 +585,8 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
             compressed_colors.set_color(i, cv);
         }
 
-        log::info!("Colored {} sbwt positions", total_some_count);
-        log::info!("{} sbwt positions left uncolored", total_none_count);
+        log::info!("Labeled {} sbwt positions", total_some_count);
+        log::info!("{} sbwt positions left unlabeled", total_none_count);
 
         compressed_colors
 
@@ -596,7 +596,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     pub fn new<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy) -> Self {
         let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1); // +1 for the "none"
 
-        log::info!("Marking colors");
+        log::info!("Marking categories");
         let color_storage = if required_bit_width <= 8 {
             SingleColoredKmers::<L,C>::mark_colors::<T, Vec::<AtomicU8>>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
         } else if required_bit_width <= 16 {
@@ -614,10 +614,10 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         log::info!("Indexing LCS array");
         let lcs_index = L::from(lcs);
 
-        log::info!("Building Color id wavelet tree");
+        log::info!("Building category id wavelet tree");
         let colors_index = C::from(coloring);
 
-        log::info!("Color structure construction complete");
+        log::info!("Category structure construction complete");
         SingleColoredKmers::<L, C> {
             sbwt, lcs: lcs_index, colors: colors_index, hierarchy,
         }
@@ -691,7 +691,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync +
     // s is the query length. s <= k
     pub fn new(mut inner: SingleColoredKmers<L, C>, s: usize, n_threads: usize) -> Self {
         assert!(s <= inner.sbwt.k());
-        inner.colors.substite_lca_for_s_mer_ranges(s, inner.hierarchy.tree(), &inner.lcs, n_threads);
+        inner.colors.substitute_lca_for_s_mer_ranges(s, inner.hierarchy.tree(), &inner.lcs, n_threads);
         Self { inner }
     }
 
@@ -802,10 +802,10 @@ mod tests {
         let lcs_wrapper_seq = LcsWrapper::from(lcs_seq);
         sequential_substitute(&mut colors_seq, s, hierarchy_seq.tree(), &lcs_wrapper_seq);
 
-        // Parallel: run substite_lca_for_s_mer_ranges on the same initial color storage
+        // Parallel: run substitute_lca_for_s_mer_ranges on the same initial color storage
         let (sbwt2, lcs2, mut colors2, hierarchy2) = index.into_parts();
         let lcs_wrapper = LcsWrapper::from(lcs2);
-        colors2.substite_lca_for_s_mer_ranges(s, hierarchy2.tree(), &lcs_wrapper, n_threads);
+        colors2.substitute_lca_for_s_mer_ranges(s, hierarchy2.tree(), &lcs_wrapper, n_threads);
 
         let n = sbwt2.n_sets();
         for i in 0..n {
