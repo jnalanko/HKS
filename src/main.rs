@@ -44,7 +44,7 @@ impl ColorIndex {
     fn load(input: &mut impl Read) -> Self {
         let mut file_id = [0_u8; 8];
         input.read_exact(&mut file_id).unwrap();
-        assert_eq!(file_id, HKS_FILE_ID, "Invalid DKS file ID");
+        assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID");
 
         let mut type_id = [0_u8; 4];
         input.read_exact(&mut type_id).unwrap();
@@ -55,7 +55,7 @@ impl ColorIndex {
                 index
             },
             _ => {
-                panic!("Unknown index type ID in DKS file: {}", String::from_utf8_lossy(&type_id));
+                panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
             }
         }
     }
