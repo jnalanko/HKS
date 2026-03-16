@@ -1,6 +1,5 @@
 use std::{cmp::{max, Reverse}, io::Write, ops::Range};
 use jseqio::seq_db::SeqDB;
-use crate::{color_storage::SimpleColorStorage, single_colored_kmers::{ColorHierarchy, SingleColoredKmers}};
 use crate::traits::*;
 
 pub trait RunWriter: Send {

@@ -74,6 +74,8 @@ hks build \
 | `--forward-only` | Do not include reverse complements |
 | `--n-threads` | Number of threads |
 
+Input files can be gzip-compressed (`.gz`); decompression is handled automatically.
+
 ### Query k-mers
 
 ```bash

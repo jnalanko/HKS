@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::ops::Range;
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
@@ -6,14 +5,12 @@ use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
 use bitvec_sds::traits::RandomAccessU32;
-//use bitvec_sds::wavelet_tree::{SelectSupportBoth, WaveletTree};
 use crossbeam::channel::{Receiver, RecvTimeoutError};
 use jseqio::seq_db::SeqDB;
 use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStream, StreamingIndex, SubsetMatrix};
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 use crate::traits::*;
-use crate::util::for_each_run_with_key;
 
 /// A rooted color hierarchy tree together with a name for every node.
 /// Leaves occupy IDs 0..n_leaves; internal nodes (including root) occupy n_leaves..n_nodes.
