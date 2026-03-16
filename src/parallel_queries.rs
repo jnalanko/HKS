@@ -29,10 +29,10 @@ impl<W: Write> OutputWriter<W> {
         if let Some(names) = &color_names {
             for name in names {
                 if name == "none" {
-                    eprintln!("Error: can not use \"none\" as a color name because it is a reserved name");
+                    panic!("Error: can not use \"none\" as a color name because it is a reserved name");
                 }
                 if name == "root" {
-                    eprintln!("Error: can not use \"root\" as a color name because it is a reserved name");
+                    panic!("Error: can not use \"root\" as a color name because it is a reserved name");
                 }
             }
         }
