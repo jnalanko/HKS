@@ -85,18 +85,32 @@ struct QueryBatch {
     seqs: SeqDB,
 
     batch_id: usize,
-    sequence_starts: Vec<usize>, // Source sequence changes at these answer indices 
+    sequence_starts: Vec<usize>, // Source sequence changes at these k-mer indices (within the flat k-mer array)
     chars_in_batch: usize,
     kmers_in_batch: usize,
     k: usize,
 }
 
+/// A run-length encoded segment: `len` consecutive k-mers with the same `color`.
+#[derive(Debug, Clone)]
+struct CompactRun {
+    color: Option<usize>,
+    len: usize,
+}
+
 #[derive(Debug)]
 struct ProcessedQueryBatch {
-    result: Vec<Option<usize>>,
+    /// Run-length encoded k-mer colors. Workers perform RLE so the output
+    /// thread iterates over condensed runs rather than per-position colors.
+    runs: Vec<CompactRun>,
+
+    /// Total number of k-mers in this batch (for throughput stats).
+    n_kmers: usize,
 
     batch_id: usize,
-    sequence_starts: Vec<usize> 
+
+    /// Indices into `runs` where new query sequences begin.
+    sequence_starts: Vec<usize>,
 }
 
 impl QueryBatch {
@@ -127,22 +141,49 @@ impl QueryBatch {
     }
 
     fn run<A: ColoredKmerLookupAlgorithm>(self, kmer_lookup_algo: &A) -> ProcessedQueryBatch {
-        let total_query_kmers = self.seqs.iter().fold(0_usize, |acc, rec| 
-            acc + kmers_in_n(self.k, rec.seq.len()) 
-        );
-        let mut color_ids = Vec::<Option<usize>>::with_capacity(total_query_kmers);
+        let mut runs: Vec<CompactRun> = Vec::new();
+        let mut run_sequence_starts: Vec<usize> = Vec::new();
+        let mut kmer_pos = 0usize;
+        let mut starts_ptr = self.sequence_starts.iter().peekable();
 
         for rec in self.seqs.iter() {
             for color in kmer_lookup_algo.lookup_kmers(rec.seq, self.k) {
-                color_ids.push(color);
+                // Consume ALL sequence boundaries at this k-mer position.
+                // Multiple boundaries at the same position occur when empty
+                // queries (shorter than k) precede a real query — both get
+                // sequence_starts entries at the same k-mer offset.
+                let mut is_new_seq = false;
+                while starts_ptr.peek().is_some_and(|&&s| s == kmer_pos) {
+                    run_sequence_starts.push(runs.len());
+                    starts_ptr.next();
+                    is_new_seq = true;
+                }
+
+                if is_new_seq {
+                    // Force a new run at sequence boundary, even if the color
+                    // matches the previous run.
+                    runs.push(CompactRun { color, len: 1 });
+                } else if let Some(last) = runs.last_mut() {
+                    if last.color == color {
+                        last.len += 1;
+                    } else {
+                        runs.push(CompactRun { color, len: 1 });
+                    }
+                } else {
+                    // First k-mer in batch with no sequence_start before it.
+                    // This happens when the batch starts mid-sequence (extend_prev).
+                    runs.push(CompactRun { color, len: 1 });
+                }
+
+                kmer_pos += 1;
             }
         }
 
-        assert_eq!(color_ids.len(), total_query_kmers);
         ProcessedQueryBatch{
-            result: color_ids,
+            n_kmers: kmer_pos,
+            runs,
             batch_id: self.batch_id,
-            sequence_starts: self.sequence_starts,
+            sequence_starts: run_sequence_starts,
         }
     }
 }
@@ -185,8 +226,8 @@ fn output_batch_result(batch: &ProcessedQueryBatch, state: &mut OutputState, wri
     let run_color = &mut state.run_color;
 
     let mut starts_ptr = batch.sequence_starts.iter().peekable();
-    for (i, color) in batch.result.iter().enumerate() {
-        while starts_ptr.peek().is_some_and(|&&s| s == i) {
+    for (run_idx, run) in batch.runs.iter().enumerate() {
+        while starts_ptr.peek().is_some_and(|&&s| s == run_idx) {
             // New sequence starts. This closes the currently open run, if exists
             if let Some(p) = run_open {
                 writer.write_run(*cur_seq_id, *run_color, *p..(*p + *run_len));
@@ -201,20 +242,20 @@ fn output_batch_result(batch: &ProcessedQueryBatch, state: &mut OutputState, wri
             None => {
                 // We are at the start of a sequence -> open a new run
                 *run_open = Some(0);
-                *run_len = 1;
-                *run_color = *color;
+                *run_len = run.len;
+                *run_color = run.color;
             },
             Some(p) => {
-                // See if we can extend the current run
-                if *run_color == *color {
+                // See if we can extend the current run (merge with previous)
+                if *run_color == run.color {
                     // Extend
-                    *run_len += 1;
+                    *run_len += run.len;
                 } else {
                     // Run ends
                     writer.write_run(*cur_seq_id, *run_color, *p .. (*p + *run_len));
                     *run_open = Some(*p + *run_len);
-                    *run_len = 1;
-                    *run_color = *color;
+                    *run_len = run.len;
+                    *run_color = run.color;
                 }
             }
         }
@@ -245,7 +286,7 @@ fn output_thread(query_results: crossbeam::channel::Receiver<ProcessedQueryBatch
                 let min_batch = &min_batch.0; // Unwrap from Reverse
                 if min_batch.batch_id == next_batch_id {
                     output_batch_result(min_batch, &mut output_state, writer);
-                    n_kmers_processed += min_batch.result.len();
+                    n_kmers_processed += min_batch.n_kmers;
                     batch_buffer.pop();
                     next_batch_id += 1;
                 } else {
