@@ -208,7 +208,7 @@ pub struct Cli {
 pub enum Subcommands {
     #[command(arg_required_else_help = true)]
     Build {
-        #[arg(short, required = true, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(short, required = true, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: u64,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
@@ -260,7 +260,7 @@ pub enum Subcommands {
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
         n_threads: u64,
 
-        #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(help = "Query k-mer length. Must be less or equal to the k used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: Option<u64>,
 
         #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
