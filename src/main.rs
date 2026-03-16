@@ -208,13 +208,13 @@ pub struct Cli {
 pub enum Subcommands {
     #[command(arg_required_else_help = true)]
     Build {
-        #[arg(short, required = true, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
-        k: u64,
+        #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
+        s: u64,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
         file_colors: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single file, one sequence per color", short, long, help_heading = "Input", conflicts_with = "file_colors")]
+        #[arg(help = "Give input as a single file, one sequence per color", long, help_heading = "Input", conflicts_with = "file_colors")]
         sequence_colors: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
@@ -505,9 +505,9 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, k, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
 
-            let (k, n_threads) = (k as usize, n_threads as usize);
+            let (s, n_threads) = (s as usize, n_threads as usize);
 
             // Create output directory if does not exist
             std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
@@ -534,8 +534,8 @@ fn main() {
                 } else {
                     LcsArray::from_sbwt(&sbwt, n_threads)
                 };
-                if sbwt.k() != k {
-                    panic!("The k specified ({}) does not match the k of the provided SBWT ({})", k, sbwt.k());
+                if sbwt.k() != s {
+                    panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
                 }
                 (sbwt, lcs)
             } else {
@@ -548,7 +548,7 @@ fn main() {
                     // Use disk-based construction
                     sbwt::SbwtIndexBuilder::new()
                         .add_rev_comp(add_rev_comps)
-                        .k(k)
+                        .k(s)
                         .build_lcs(true)
                         .n_threads(n_threads)
                         .precalc_length(8)
@@ -559,7 +559,7 @@ fn main() {
                     // Use in-memory construction
                     sbwt::SbwtIndexBuilder::new()
                         .add_rev_comp(add_rev_comps)
-                        .k(k)
+                        .k(s)
                         .build_lcs(true)
                         .n_threads(n_threads)
                         .precalc_length(8)
