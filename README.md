@@ -66,9 +66,9 @@ Input:
   -u, --unitigs <UNITIGS>
           Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
       --color-names <COLOR_NAMES_FILE>
-          Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names.
+          Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names "none" and "root" are reserved and cannot be used.
       --hierarchy <HIERARCHY>
-          Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root).
+          Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root, named "root").
 
 Advanced use:
   -b, --sbwt-path <SBWT_PATH>  Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
