@@ -2,7 +2,7 @@
 
 HKS is a variable-length k-mer index with hierarchical color labeling. The input consists of: 
 
-* A set of k-mer sets, one for each color.
+* A set of k-mer sets, one for each color. In the manuscript, these are called **categories**.
 * A color hierarchy described as a tree where the colors are the leaves. For example, a phylogenetic tree.
 
 The index is build for a maximum s-mer length s, and allows queries for *any* k-mer length up to s. The query takes a sequence, and prints a file in bed-format annotating each input k-mer with the lowest common ancestor of the colors of that k-mer in the hierarchy.
@@ -77,26 +77,39 @@ Advanced use:
 
 ### Query k-mers
 
+The query the index built above with k-mer length 5 and the input file `example/query.fasta`, run the following:
+
 ```bash
 hks lookup \
-  --query example/query.fasta \
-  --index index.hks
+    -q example/query.fasta \
+    -i index.hks \
+    -k 5 \
+    --report-color-names \
+    --report-query-names \
+    --report-misses
 ```
 
-Key options:
+This will print the following:
 
-| Flag | Description |
-|------|-------------|
-| `--query` | FASTA/FASTQ query file |
-| `--index` | Index path |
-| `--k` | Query k (must be ≤ build k; defaults to build k) |
-| `--report-color-names` | Print color names instead of IDs |
-| `--report-query-names` | Include query sequence names in output |
-| `--report-misses` | Also report positions with no k-mer match |
-| `--no-header` | Suppress TSV header line |
-| `--n-threads` | Number of threads |
+```
+Q1	0	1	clade1
+Q1	1	3	example/A.fasta
+Q1	3	4	clade1
+Q1	4	5	example/B.fasta
+Q1	5	7	none
+Q1	7	11	example/C.fasta
+Q1	11	12	root
+Q1	12	15	example/C.fasta
+Q2	0	1	clade1
+Q2	1	8	example/B.fasta
+Q2	8	12	none
+Q2	12	14	example/A.fasta
+Q2	14	15	root
+Q2	15	19	none
+Q2	19	22	example/C.fasta
+```
 
-Output is TSV with columns `query_rank`, `from_kmer`, `to_kmer`, `color`.
+This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[3,4)` to clade1 again, and so on.
 
 ### Hierarchy file format
 
@@ -104,35 +117,11 @@ By default, HKS uses a star topology: all colors are children of a single root n
 
 The file has three sections:
 
-1. **Header line** – two integers: `<n_internal_nodes> <n_edges>`
-2. **Internal node names** – one name per line, `n_internal_nodes` lines. These are the non-leaf nodes of the tree. IDs are assigned to them starting right after the leaf (color) IDs, in the order they appear here.
-3. **Edge list** – one edge per line, `n_edges` lines. Each line is `<child_name> <parent_name>` (whitespace-separated). Both names must be either a color name (leaf) or an internal node name declared above.
+1. **Header line**: two integers: `<n_internal_nodes> <n_edges>`
+2. **Internal node names**: one name per line, `n_internal_nodes` lines. These are the non-leaf nodes of the tree. IDs are assigned to them starting right after the leaf (color) IDs, in the order they appear here.
+3. **Edge list**: one edge per line, `n_edges` lines. Each line is `<child_name> <parent_name>` (whitespace-separated). Both names must be either a color name (leaf) or an internal node name declared above.
 
-Leaf names are the color names supplied via `--color-names`, or the input file paths when `--color-names` is omitted.
-
-**Example** – three colors `A`, `B`, `C` grouped under two internal nodes:
-
-```
-Tree structure:
-
-        root
-       /    \
-    clade1   C
-    /    \
-   A      B
-```
-
-Hierarchy file (assuming color names are `A`, `B`, `C`):
-
-```
-2 4
-clade1
-root
-A clade1
-B clade1
-clade1 root
-C root
-```
+See `example/hierarchy.txt` for an example.
 
 ### Other subcommands
 
