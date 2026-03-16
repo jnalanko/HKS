@@ -5,7 +5,7 @@ HKS is a variable-length k-mer index with hierarchical color labeling. The input
 * A set of k-mer sets, one for each color. In the manuscript, these are called **categories**.
 * A color hierarchy described as a tree where the colors are the leaves. For example, a phylogenetic tree.
 
-The index is build for a maximum s-mer length s, and allows queries for *any* k-mer length up to s. The query takes a sequence, and prints a file in bed-format annotating each input k-mer with the lowest common ancestor of the colors of that k-mer in the hierarchy.
+The index is built for a maximum s-mer length s, and allows queries for *any* k-mer length up to s. The query takes a sequence, and prints a file in bed-format annotating each input k-mer with the lowest common ancestor of the colors of that k-mer in the hierarchy.
 
 ## Installation
 
@@ -25,7 +25,7 @@ The binary is `target/release/hks`.
 
 The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per color. Both DNA strands are indexed. By default, the names of the colors are the file paths of the input FASTA/FASTQ files. 
 
-The `example/` directory a tiny example dataset with three files A.fna, B.fna. C.fna. To index it, run:
+The `example/` directory contains a tiny example dataset with three files A.fna, B.fna. C.fna. To index it, run:
 
 ```bash
 hks build \
@@ -77,7 +77,7 @@ Advanced use:
 
 ### Query k-mers
 
-The query the index built above with k-mer length 5 and the input file `example/query.fasta`, run the following:
+To query the index built above with k-mer length 5 and the input file `example/query.fasta`, run the following:
 
 ```bash
 hks lookup \
