@@ -689,7 +689,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync +
     // s is the query length. s <= k
     pub fn new(mut inner: SingleColoredKmers<L, C>, s: usize, n_threads: usize) -> Self {
         assert!(s <= inner.sbwt.k());
-        inner.colors.substite_lca_for_s_mer_ranges(s, inner.hierarchy.tree(), &inner.lcs, n_threads);
+        inner.colors.substitute_lca_for_s_mer_ranges(s, inner.hierarchy.tree(), &inner.lcs, n_threads);
         Self { inner }
     }
 
@@ -803,7 +803,7 @@ mod tests {
         // Parallel: run substite_lca_for_s_mer_ranges on the same initial color storage
         let (sbwt2, lcs2, mut colors2, hierarchy2) = index.into_parts();
         let lcs_wrapper = LcsWrapper::from(lcs2);
-        colors2.substite_lca_for_s_mer_ranges(s, hierarchy2.tree(), &lcs_wrapper, n_threads);
+        colors2.substitute_lca_for_s_mer_ranges(s, hierarchy2.tree(), &lcs_wrapper, n_threads);
 
         let n = sbwt2.n_sets();
         for i in 0..n {
