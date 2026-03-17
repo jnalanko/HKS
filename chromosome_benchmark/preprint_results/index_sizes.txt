@@ -8,4 +8,4 @@
 -rw-r--r-- 1 analanko hyad-all   151023940 Mar  8 20:23 ./kraken_k63_m15/hash.k2d
 -rw-r--r-- 1 analanko hyad-all   621794772 Mar  8 20:26 ./kraken_k63_m22/hash.k2d
 -rw-r--r-- 1 analanko hyad-all   876750292 Mar  8 20:28 ./kraken_k63_m31/hash.k2d
--rw-r--r-- 1 analanko hyad-all 11150448137 12. 3. 22:48 ./index/CHM13-k63.hks
+-rw-r--r-- 1 analanko hyad-all 11150448137 12. 3. 22:48 ./index/CHM13-s63.hks

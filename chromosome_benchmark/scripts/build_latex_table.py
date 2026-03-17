@@ -58,7 +58,7 @@ log_base_dir = "./preprint_results"
 # Parse index sizes from index_sizes.txt
 index_sizes = {}  # (k, m) -> bytes
 kraken_path_re = re.compile(r'kraken_k(\d+)_m(\d+)/hash\.k2d')
-hks_path_re = re.compile(r'index/CHM13-k63.hks')
+hks_path_re = re.compile(r'index/CHM13-s63.hks')
 try:
     for line in open(f"{log_base_dir}/index_sizes.txt"):
         parts = line.split()
@@ -105,7 +105,7 @@ hks_build_phase2_time = None
 hks_build_phase2_mem = None
 try:
     r1 = parse_stderr(open(f"{log_base_dir}/logs/sbwt-in-mem-k63-t{t}.log").readlines())
-    r2 = parse_stderr(open(f"{log_base_dir}/logs/hks-build-k63-t{t}.log").readlines())
+    r2 = parse_stderr(open(f"{log_base_dir}/logs/hks-build-s63-t{t}.log").readlines())
     if r1['elapsed_seconds'] is not None and r2['elapsed_seconds'] is not None:
         hks_build_time = r1['elapsed_seconds'] + r2['elapsed_seconds']
     if r1['max_rss_bytes'] is not None and r2['max_rss_bytes'] is not None:
