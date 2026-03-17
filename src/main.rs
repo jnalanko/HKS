@@ -319,25 +319,6 @@ pub enum Subcommands {
         index: PathBuf,
     },
 
-    /* Outdated commmand. This was before the changes that introduced the color hierarchy
-    #[command(arg_required_else_help = true, about = "Debug: build individual SBWTs per color and query them separately.")]
-    IndividualSbwtDebug {
-        #[arg(help = "A file with one fasta/fastq filename per line (one per color)", short, long, required = true, help_heading = "Input")]
-        input: PathBuf,
-
-        #[arg(help = "A fasta/fastq query file", short, long, required = true)]
-        query: PathBuf,
-
-        #[arg(help = "K-mer length (used for both indexing and querying)", short, required = true)]
-        k: usize,
-
-        #[arg(help = "Do not add reverse complemented k-mers", short = 'f', long = "forward-only")]
-        forward_only: bool,
-
-        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
-        n_threads: usize,
-    },
-    */
 }
 
 struct DynamicFastXReaderWrapper {
@@ -422,89 +403,6 @@ fn read_color_names_file(path: &PathBuf) -> Vec<String> {
         .map(|l| l.unwrap())
         .collect()
 }
-
-/* This code is outdated. It is before the changes that introduced the color hierarchy tree 
-fn individual_sbwt_debug(input_fof: &PathBuf, query_path: &PathBuf, k: usize, forward_only: bool, n_threads: usize) {
-    // Read input file-of-files
-    let input_paths: Vec<PathBuf> = BufReader::new(File::open(input_fof)
-        .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", input_fof.display())))
-        .lines().map(|f| PathBuf::from(f.unwrap())).collect();
-
-    // Build one SBWT per input file, keeping all in memory
-    let mut indices = Vec::new();
-    for input_path in &input_paths {
-        log::info!("Building SBWT for {}", input_path.display());
-        let stream = LazyFileSeqStream::new(input_path.clone(), false);
-        let (sbwt, lcs) = sbwt::SbwtIndexBuilder::new()
-            .add_rev_comp(!forward_only)
-            .k(k)
-            .build_lcs(true)
-            .n_threads(n_threads)
-            .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
-            .run(stream);
-        indices.push((sbwt, lcs.unwrap()));
-    }
-
-    // Open query file
-    let mut reader = DynamicFastXReader::from_file(query_path)
-        .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
-
-    // Create OutputWriter (same format as lookup command)
-    let stdout = BufWriter::with_capacity(1 << 17, std::io::stdout());
-    let mut writer = OutputWriter::new(stdout, None, None, false, true);
-    writer.write_header();
-
-    // Stream query sequences, querying all SBWTs in lockstep
-    let mut seq_id: isize = 0;
-    while let Some(rec) = reader.read_next().unwrap() {
-        let mut ms_iters: Vec<_> = indices.iter()
-            .map(|(sbwt, lcs)| {
-                let si = sbwt::StreamingIndex::new(sbwt, lcs);
-                si.matching_statistics_iter(rec.seq)
-            })
-            .collect();
-
-        // Skip first k-1 positions (not full k-mers yet)
-        for _ in 0..k.saturating_sub(1) {
-            for iter in ms_iters.iter_mut() { iter.next(); }
-        }
-
-        // Advance all iterators in lockstep, run-length encoding on the fly
-        let mut run_start = 0usize;
-        let mut run_color = None;
-        let mut kmer_count = 0usize;
-        loop {
-            let steps: Vec<Option<_>> = ms_iters.iter_mut().map(|it| it.next()).collect();
-            if steps.iter().any(|s| s.is_none()) { break; }
-
-            // Union colors: a k-mer is in color i iff its MS length == k
-            let color = steps.into_iter().enumerate().fold(
-                None,
-                |acc, (color_id, step)| {
-                    let (len, _) = step.unwrap();
-                    if len == k { acc.union(ColorVecValue::Single(color_id)) }
-                    else { acc }
-                },
-            );
-
-            if kmer_count == 0 {
-                run_start = 0;
-                run_color = color;
-            } else if color != run_color {
-                writer.write_run(seq_id, run_color, run_start..kmer_count);
-                run_start = kmer_count;
-                run_color = color;
-            }
-            kmer_count += 1;
-        }
-        if kmer_count > 0 {
-            writer.write_run(seq_id, run_color, run_start..kmer_count);
-        }
-        seq_id += 1;
-    }
-    writer.flush();
-}
-*/
 
 fn main() {
 
