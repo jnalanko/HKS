@@ -33,7 +33,7 @@ enum ColorIndex { // For now just one variant, might add more later
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none", "root"];
 
-const HKS_FILE_ID: [u8; 8] = *b"hks0.1.2";
+const HKS_FILE_ID: [u8; 8] = *b"hks0.1.3";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
 
@@ -51,7 +51,7 @@ impl ColorIndex {
     fn load(input: &mut impl Read) -> Self {
         let mut file_id = [0_u8; 8];
         input.read_exact(&mut file_id).unwrap();
-        assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID");
+        assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
 
         let mut type_id = [0_u8; 4];
         input.read_exact(&mut type_id).unwrap();

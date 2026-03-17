@@ -379,7 +379,7 @@ mod tests {
         assert!(err.contains("at least one"), "{err}");
     }
 
-    /// Cross-check: LcaRmq must agree with the naive O(n²) LcaTree on a larger random-ish tree.
+    /// Cross-check: LcaSupport must agree with the naive O(n²) LcaTree on a larger random-ish tree.
     #[test]
     fn agrees_with_naive_on_larger_tree() {
         use crate::lca_tree::LcaTree;

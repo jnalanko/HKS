@@ -1,4 +1,5 @@
 use std::io::{self, Read, Write};
+use crate::lca_support::LcaSupport;
 
 /// A rooted tree where leaves occupy IDs 0..num_leaves and internal nodes occupy
 /// IDs num_leaves..n. The root is an internal node (or node 0 for a single-node tree).
@@ -9,8 +10,7 @@ pub struct LcaTree {
     root: usize,
     /// parent[i] is the parent of node i; parent[root] == root.
     parent: Vec<usize>,
-    /// Flat n×n table: lca_table[i * n + j] = LCA(i, j)
-    lca_table: Vec<usize>,
+    lca_support: LcaSupport,
 }
 
 impl LcaTree {
@@ -92,35 +92,14 @@ impl LcaTree {
             return Err("Tree is disconnected: not all nodes are reachable from root".to_string());
         }
 
-        // Precompute all LCA pairs.
-        let mut lca_table = vec![0usize; n * n];
-        for i in 0..n {
-            for j in 0..n {
-                lca_table[i * n + j] = Self::naive_lca(i, j, &parent, &depth);
-            }
-        }
+        let lca_support = LcaSupport::new(n, edges).unwrap();
 
-        Ok(LcaTree { n, root, parent, lca_table })
-    }
-
-    fn naive_lca(mut a: usize, mut b: usize, parent: &[usize], depth: &[usize]) -> usize {
-        while depth[a] > depth[b] {
-            a = parent[a];
-        }
-        while depth[b] > depth[a] {
-            b = parent[b];
-        }
-        while a != b {
-            a = parent[a];
-            b = parent[b];
-        }
-        a
+        Ok(LcaTree { n, root, parent, lca_support })
     }
 
     /// Returns the lowest common ancestor of nodes `a` and `b`.
     pub fn lca(&self, a: usize, b: usize) -> usize {
-        assert!(a < self.n && b < self.n, "Node index out of bounds");
-        self.lca_table[a * self.n + b]
+        self.lca_support.lca(a, b)
     }
 
     /// Returns the lowest common ancestor of nodes `a` and `b`.
@@ -154,7 +133,7 @@ impl LcaTree {
         write_u64(w, self.n as u64)?;
         write_u64(w, self.root as u64)?;
         write_usize_slice(w, &self.parent)?;
-        write_usize_slice(w, &self.lca_table)?;
+        self.lca_support.serialize(w)?;
         Ok(())
     }
 
@@ -163,8 +142,8 @@ impl LcaTree {
         let n = read_u64(r)? as usize;
         let root = read_u64(r)? as usize;
         let parent = read_usize_vec(r)?;
-        let lca_table = read_usize_vec(r)?;
-        Ok(LcaTree { n, root, parent, lca_table })
+        let lca_support = LcaSupport::load(r)?;
+        Ok(LcaTree { n, root, parent, lca_support })
     }
 }
 
