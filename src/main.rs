@@ -57,7 +57,7 @@ impl ColorIndex {
         match type_id {
             FIXED_INDEX_TYPE_ID => {
                 let index = ColorIndex::FixedK(FixedKColorIndex::load(input));
-                log::info!("Loaded index with k = {}", index.k());
+                log::info!("Loaded index with s = {}", index.k());
                 index
             },
             _ => {
@@ -649,7 +649,7 @@ fn main() {
 
             let k = k.unwrap_or(index.k() as u64) as usize;
             if k > index.k() {
-                panic!("Error: query k = {} larger than indexing k = {}", k, index.k());
+                panic!("Error: query s = {} larger than indexing k = {}", k, index.k());
             }
 
             let color_names = report_color_names.then(|| index.color_names().to_vec());
