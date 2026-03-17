@@ -649,7 +649,7 @@ fn main() {
 
             let k = k.unwrap_or(index.k() as u64) as usize;
             if k > index.k() {
-                panic!("Error: query s = {} larger than indexing k = {}", k, index.k());
+                panic!("Error: query k = {} larger than indexing s = {}", k, index.k());
             }
 
             let color_names = report_color_names.then(|| index.color_names().to_vec());
