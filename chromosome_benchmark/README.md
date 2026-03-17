@@ -82,6 +82,10 @@ python3 scripts/print_parallel_speedup_commands.py | bash
 # Plots
 python3 scripts/draw_combined_heatmap.py
 python3 scripts/plot_parallel_speedup.py
+python3 scripts/draw_combined_heatmap.py preprint_results/heatmap_data/heatmap-k63-hks.tsv preprint_results/heatmap_data/heatmap-k63-m31-kraken.tsv plots/heatmap-combined.pdf
+
+# Latex table
+python3 scripts/build_latex_table.py
 ```
 
 --
