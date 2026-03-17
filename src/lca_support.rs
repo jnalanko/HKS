@@ -154,6 +154,7 @@ impl LcaSupport {
     #[inline]
     pub fn lca(&self, a: usize, b: usize) -> usize {
         assert!(a < self.n && b < self.n, "Node index out of bounds");
+        if a == b { return a; } // Save some unnecessary work
 
         // The LCA of a and b is the minimum-depth node in the Euler tour between
         // the first occurrences of a and b.
