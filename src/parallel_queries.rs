@@ -39,7 +39,7 @@ impl<W: Write + Send> RunWriter for OutputWriter<W> {
     fn write_header(&mut self) {
         if self.print_header {
             let seq_col = if self.seq_names.is_some() { "query_name" } else { "query_rank" };
-            let color_col = if self.color_names.is_some() { "color_name" } else { "color" };
+            let color_col = if self.color_names.is_some() { "label_name" } else { "label" };
             writeln!(self.out, "{seq_col}\tfrom_kmer\tto_kmer\t{color_col}").unwrap();
         }
     }
@@ -491,7 +491,7 @@ mod tests {
         let mut found_kmers: Vec::<Vec::<(usize,Color)>> = vec![Vec::new(); queries.len()]; 
         for (line_idx, line) in output_lines.enumerate() {
             if line_idx == 0 { // tsv header
-                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tcolor");
+                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tlabel");
             } else {
                 let mut fields = line.split('\t');
                 let seq_id: usize = fields.next().unwrap().parse().unwrap();
@@ -603,7 +603,7 @@ mod tests {
         let mut found_kmers: Vec<Vec<(usize, Color)>> = vec![Vec::new(); queries.len()];
         for (line_idx, line) in output_lines.enumerate() {
             if line_idx == 0 {
-                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tcolor");
+                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tlabel");
             } else {
                 let mut fields = line.split('\t');
                 let seq_id: usize = fields.next().unwrap().parse().unwrap();

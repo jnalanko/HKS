@@ -115,7 +115,7 @@ fn read_hierarchy_file(path: &PathBuf, leaf_names: &[String]) -> (crate::lca_tre
 
     for name in leaf_names.iter() {
         if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
-            panic!("Error: can not use \"{}\" as a color name because it is a reserved name", name);
+            panic!("Error: can not use \"{}\" as a label name because it is a reserved name", name);
         }
     }
 
@@ -223,10 +223,10 @@ pub enum Subcommands {
         #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         s: u64,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
         file_colors: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single file, one sequence per color", long, help_heading = "Input", conflicts_with = "file_colors")]
+        #[arg(help = "Give input as a single file, one sequence per label", long, help_heading = "Input", conflicts_with = "file_colors")]
         sequence_colors: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
@@ -252,13 +252,13 @@ pub enum Subcommands {
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
         // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "color-names", help_heading = "Input")]
+        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as label names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "label-names", help_heading = "Input")]
         color_names_file: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
+        #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Hidden option: After building, turn all \"none\" colors into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
+        #[arg(help = "Hidden option: After building, turn all \"none\" labels into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
         none_to_multiple: bool,
 
     },
@@ -277,13 +277,13 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
-        #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
+        #[arg(help = "Print label names instead of label rank integers. K-mers present in multiple labels 'root' when this flag is set.", long = "report-label-names")]
         report_color_names: bool,
 
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
         report_query_names: bool,
 
-        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-color-names is set.", long = "report-misses")]
+        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-label-names is set.", long = "report-misses")]
         report_misses: bool,
 
         #[arg(help = "Do not print the header line.", long = "no-header")]
@@ -304,7 +304,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Print color names instead of color ids", long = "report-color-names")]
+        #[arg(help = "Print label names instead of label ids", long = "report-label-names")]
         report_color_names: bool,
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
@@ -372,7 +372,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     index.build_sbwt_select();
 
     let stdout_mutex = std::sync::Mutex::new(std::io::BufWriter::new(std::io::stdout()));
-    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "k\tcolor\tcount").unwrap(); h.flush().unwrap(); }
+    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "k\tlabel\tcount").unwrap(); h.flush().unwrap(); }
 
     let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
     thread_pool.install(|| {
@@ -399,7 +399,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
 // Reads a color names file with one name per line.
 fn read_color_names_file(path: &PathBuf) -> Vec<String> {
     BufReader::new(File::open(path)
-        .unwrap_or_else(|e| panic!("Could not open color names file {}: {e}", path.display())))
+        .unwrap_or_else(|e| panic!("Could not open label names file {}: {e}", path.display())))
         .lines()
         .map(|l| l.unwrap())
         .collect()
@@ -490,7 +490,7 @@ fn main() {
                 let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
                     let names = read_color_names_file(names_path);
                     if names.len() != input_paths.len() {
-                        panic!("Color names file has {} names but there are {} input files", names.len(), input_paths.len());
+                        panic!("Label names file has {} names but there are {} input files", names.len(), input_paths.len());
                     }
                     names
                 } else {
@@ -505,7 +505,7 @@ fn main() {
                 let sc = sequence_colors.unwrap();
 
                 let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
-                    log::info!("Reading color names from {}", names_path.display());
+                    log::info!("Reading label names from {}", names_path.display());
                     read_color_names_file(names_path)
                 } else {
                     log::info!("Reading sequence names from {}", sc.display());
@@ -572,15 +572,15 @@ fn main() {
             let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
-            println!("Number of colors in hierarchy:      {}", index.n_colors_in_hierarchy());
+            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy());
             println!("Number of k-mers:      {}", index.n_kmers());
-            println!("Colored SBWT positions: {}", stats.colored);
-            println!("Uncolored SBWT positions:  {}", stats.uncolored);
-            println!("Color run min length:  {}", stats.color_run_min);
-            println!("Color run max length:  {}", stats.color_run_max);
-            println!("Color run mean length: {:.2}", stats.color_run_mean);
+            println!("Labeled SBWT positions: {}", stats.colored);
+            println!("Unlabeled SBWT positions:  {}", stats.uncolored);
+            println!("Label run min length:  {}", stats.color_run_min);
+            println!("Label run max length:  {}", stats.color_run_max);
+            println!("Label run mean length: {:.2}", stats.color_run_mean);
             println!();
-            println!("{:<10}  {}", "Count", "Color name");
+            println!("{:<10}  {}", "Count", "Label name");
             println!("{:<10}  {}", stats.uncolored, "none");
             for (id, name) in index.color_names().iter().enumerate() {
                 println!("{:<10}  {}", stats.color_counts[id], name);

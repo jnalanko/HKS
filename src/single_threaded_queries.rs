@@ -27,7 +27,7 @@ where L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAc
         .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
     let mut seq_id = 0_usize;
 
-    println!("seq_rank\tfrom_kmer\tto_kmer\tcolor");
+    println!("seq_rank\tfrom_kmer\tto_kmer\tlabel");
     while let Some(rec) = reader.read_next().unwrap() {
         let mut run_start: usize = 0;
         let mut run_color: Option<usize> = None;
