@@ -10,7 +10,7 @@ description = "A data structure for querying hierarchical k-mer sets"
 
 rand = "0.8"
 rand_distr = "0.4"
-sbwt = {path = "./sbwt-rs-cli/api", version = "0.4.1"}
+sbwt = {path = "./sbwt-rs-cli/api", version = "0.4.2"}
 bitvec = {version = "1.0", features = ["serde"]}
 clap = "4.5" 
 byteorder = "1.5"
