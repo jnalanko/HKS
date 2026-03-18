@@ -518,11 +518,6 @@ fn main() {
                     names
                 };
 
-                if color_names.len() > 10000 {
-                    log::error!("Maximum number of colors (10,000) exceeded. This limitation exists because the LCA data structure currently takes O(n^2) space, where n is the number of colors. If you really care about this use case, email the authors so they can plug in a linear-space LCA structure.");
-                    std::process::exit(1);
-                }
-
                 let n_colors = color_names.len();
                 let hierarchy = build_hierarchy(&hierarchy_path, color_names);
 
