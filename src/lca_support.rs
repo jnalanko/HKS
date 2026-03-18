@@ -19,7 +19,7 @@ pub struct LcaSupport {
     first: Vec<usize>,
     /// Sparse table stored flat: `answer_table[k * m + i]`, where m is the number of nodes
     /// on the Euler tour, is the index into `euler` of the node with minimum depth in the 
-    /// window `euler[i .. i + 2^k]` (inclusive).
+    /// window `euler[i .. i + 2^k]` (exclusive endpoint).
     answer_table: Vec<usize>,
     /// Precomputed `floor(log2(i))` for `i` in `1..=euler.len()`.
     log2_table: Vec<usize>,
