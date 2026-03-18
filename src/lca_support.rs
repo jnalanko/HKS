@@ -21,8 +21,6 @@ pub struct LcaSupport {
     /// on the Euler tour, is the index into `euler` of the node with minimum depth in the 
     /// window `euler[i .. i + 2^k]` (exclusive endpoint).
     answer_table: Vec<usize>,
-    /// Precomputed `floor(log2(i))` for `i` in `1..=euler.len()`.
-    log2_table: Vec<usize>,
 }
 
 impl LcaSupport {
@@ -116,15 +114,9 @@ impl LcaSupport {
         }
         debug_assert_eq!(euler.len(), m);
 
-        // Precompute floor(log2) table for indices 1..=m.
-        let mut log2_table = vec![0usize; m + 1];
-        for i in 2..=m {
-            log2_table[i] = log2_table[i / 2] + 1;
-        }
-
         // Build answer_table table.
         // answer_table[k * m + i] = index into `euler` of the minimum-depth node in [i, i + 2^k].
-        let levels = log2_table[m] + 1;
+        let levels = floor_log2(m) + 1;
         let mut answer_table = vec![0usize; levels * m];
 
         // Level 0: each window is a single element.
@@ -148,7 +140,7 @@ impl LcaSupport {
             }
         }
 
-        Ok(LcaSupport { n, depth, euler, first, answer_table, log2_table })
+        Ok(LcaSupport { n, depth, euler, first, answer_table })
     }
 
     /// Returns the lowest common ancestor of nodes `a` and `b`.
@@ -170,7 +162,7 @@ impl LcaSupport {
         // Look up the precomputed minima for the two overlapping windows of size 2^k
         // that together cover [l, r] exactly.
         let len = r - l + 1;
-        let k = self.log2_table[len];
+        let k = floor_log2(len);
         let m = self.euler.len();
         let left  = self.answer_table[k * m + l];
         let right = self.answer_table[k * m + r + 1 - (1 << k)];
@@ -193,7 +185,6 @@ impl LcaSupport {
         write_usize_slice(w, &self.euler)?;
         write_usize_slice(w, &self.first)?;
         write_usize_slice(w, &self.answer_table)?;
-        write_usize_slice(w, &self.log2_table)?;
         Ok(())
     }
 
@@ -203,9 +194,13 @@ impl LcaSupport {
         let euler = read_usize_vec(r)?;
         let first = read_usize_vec(r)?;
         let answer_table = read_usize_vec(r)?;
-        let log2_table = read_usize_vec(r)?;
-        Ok(LcaSupport { n, depth, euler, first, answer_table, log2_table })
+        Ok(LcaSupport { n, depth, euler, first, answer_table })
     }
+}
+
+#[inline(always)]
+fn floor_log2(n: usize) -> usize {
+    (usize::BITS - n.leading_zeros() - 1) as usize
 }
 
 // --- Binary I/O helpers ---
