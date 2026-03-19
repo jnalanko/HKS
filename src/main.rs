@@ -1,10 +1,10 @@
 #![allow(non_snake_case, clippy::needless_range_loop, clippy::len_zero)] // Using upper-case variable names from the source material
 
-use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::PathBuf, sync::{Arc, Mutex}};
+use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use clap::{Parser, Subcommand};
 use io::LazyFileSeqStream;
 use jseqio::{reader::DynamicFastXReader, record::Record};
-use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray};
+use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SubsetMatrix};
 use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
 use parallel_queries::OutputWriter;
 
@@ -405,6 +405,49 @@ fn read_color_names_file(path: &PathBuf) -> Vec<String> {
         .collect()
 }
 
+// Load SBWT and LCS, or build from scratch if not given
+fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_dir: Option<PathBuf>, all_input_seqs: io::ChainedInputStream, n_threads: usize, add_rev_comps: bool, s: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
+    if let Some(sbwt_path) = sbwt_path {
+        let mut input = BufReader::new(File::open(&sbwt_path)
+            .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
+        let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
+        log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
+        let lcs = if let Some(lcs_path) = lcs_path {
+            LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
+                .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
+        } else {
+            LcsArray::from_sbwt(&sbwt, n_threads)
+        };
+        (sbwt, lcs)
+    } else {
+        let (sbwt, lcs) = if let Some(td) = temp_dir {
+            // Use disk-based construction
+            sbwt::SbwtIndexBuilder::new()
+                .add_rev_comp(add_rev_comps)
+                .k(s)
+                .build_lcs(true)
+                .n_threads(n_threads)
+                .precalc_length(8)
+                .add_all_dummy_paths(true) // This is required for multi-k support
+                .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
+            .run(all_input_seqs)
+        } else {
+            // Use in-memory construction
+            sbwt::SbwtIndexBuilder::new()
+                .add_rev_comp(add_rev_comps)
+                .k(s)
+                .build_lcs(true)
+                .n_threads(n_threads)
+                .precalc_length(8)
+                .add_all_dummy_paths(true) // This is required for multi-k support
+                .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
+            .run(all_input_seqs)
+        };
+        let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
+        (sbwt, lcs)
+    }
+}
+
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
@@ -437,53 +480,15 @@ fn main() {
                 vec![label_by_seq.as_ref().unwrap().clone()]
             };
 
-            let (sbwt, lcs) = if let Some(sbwt_path) = sbwt_path {
-                let mut input = BufReader::new(File::open(&sbwt_path)
-                    .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
-                let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
-                log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
-                let lcs = if let Some(lcs_path) = lcs_path {
-                    LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
-                        .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
-                } else {
-                    LcsArray::from_sbwt(&sbwt, n_threads)
-                };
-                if sbwt.k() != s {
-                    panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
-                }
-                (sbwt, lcs)
+            let all_input_seqs = if let Some(unitigs_path) = unitigs_path {
+                io::ChainedInputStream::new(vec![unitigs_path.clone()])
             } else {
-                let all_input_seqs = if let Some(unitigs_path) = unitigs_path {
-                    io::ChainedInputStream::new(vec![unitigs_path.clone()])
-                } else {
-                    io::ChainedInputStream::new(sbwt_input_paths)
-                };
-                let (sbwt, lcs) = if let Some(td) = temp_dir {
-                    // Use disk-based construction
-                    sbwt::SbwtIndexBuilder::new()
-                        .add_rev_comp(add_rev_comps)
-                        .k(s)
-                        .build_lcs(true)
-                        .n_threads(n_threads)
-                        .precalc_length(8)
-                        .add_all_dummy_paths(true) // This is required for multi-k support
-                        .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
-                    .run(all_input_seqs)
-                } else {
-                    // Use in-memory construction
-                    sbwt::SbwtIndexBuilder::new()
-                        .add_rev_comp(add_rev_comps)
-                        .k(s)
-                        .build_lcs(true)
-                        .n_threads(n_threads)
-                        .precalc_length(8)
-                        .add_all_dummy_paths(true) // This is required for multi-k support
-                        .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
-                    .run(all_input_seqs)
-                };
-                let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
-                (sbwt, lcs)
+                io::ChainedInputStream::new(sbwt_input_paths)
             };
+            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, all_input_seqs, n_threads, add_rev_comps, s);
+            if sbwt.k() != s {
+                panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
+            }
 
             if let Some(fc) = label_by_file {
                 let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
