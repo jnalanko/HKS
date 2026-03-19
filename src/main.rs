@@ -396,15 +396,6 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     });
 }
 
-// Reads a color names file with one name per line.
-fn read_color_names_file(path: &PathBuf) -> Vec<String> {
-    BufReader::new(File::open(path)
-        .unwrap_or_else(|e| panic!("Could not open label names file {}: {e}", path.display())))
-        .lines()
-        .map(|l| l.unwrap())
-        .collect()
-}
-
 // Load SBWT and LCS, or build from scratch if not given
 fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_dir: Option<PathBuf>, all_input_seqs: io::ChainedInputStream, n_threads: usize, add_rev_comps: bool, s: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
     if let Some(sbwt_path) = sbwt_path {
@@ -463,6 +454,28 @@ fn read_all_lines(filename: &Path) -> Vec<String> {
     lines
 }
 
+fn get_coloring_input_for_file_mode(file_of_files_path: &Path, labels_path: Option<&PathBuf>, hierarchy_path: &Option<PathBuf>, add_rev_comps: bool) -> (ColorHierarchy, Vec<LazyFileSeqStream>){
+    let input_paths: Vec<PathBuf> = read_all_lines(file_of_files_path).into_iter().map(|f| PathBuf::from(f)).collect();
+
+    // Read labels from file, or use filenames as default
+    let labels: Vec<String> = if let Some(ref names_path) = labels_path {
+        let names = read_all_lines(names_path);
+        if names.len() != input_paths.len() {
+            panic!("Label names file has {} names but there are {} input files", names.len(), input_paths.len());
+        }
+        names
+    } else {
+        // Use file paths as default labels
+        read_all_lines(file_of_files_path)
+    };
+    let hierarchy = build_hierarchy(&hierarchy_path, labels);
+    let individual_streams: Vec<LazyFileSeqStream> = input_paths.iter()
+        .map(|p| LazyFileSeqStream::new(p.clone(), add_rev_comps))
+        .collect();
+
+    (hierarchy, individual_streams)
+}
+
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
@@ -499,25 +512,8 @@ fn main() {
             };
             let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream , n_threads, add_rev_comps, s);
 
-            if let Some(fc) = label_by_file {
-                let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
-                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
-                    .lines().map(|l| PathBuf::from(l.unwrap())).collect();
-
-                // Read labels from file, or use filenames as default
-                let label_names: Vec<String> = if let Some(ref names_path) = label_names_file {
-                    let names = read_color_names_file(names_path);
-                    if names.len() != input_paths.len() {
-                        panic!("Label names file has {} names but there are {} input files", names.len(), input_paths.len());
-                    }
-                    names
-                } else {
-                    input_paths.iter().map(|p| p.as_os_str().to_str().unwrap().to_owned()).collect()
-                };
-                let hierarchy = build_hierarchy(&hierarchy_path, label_names);
-                let individual_streams: Vec<LazyFileSeqStream> = input_paths.iter()
-                    .map(|p| LazyFileSeqStream::new(p.clone(), add_rev_comps))
-                    .collect();
+            if let Some(fof) = label_by_file {
+                let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
                 let sc = label_by_seq.unwrap();
