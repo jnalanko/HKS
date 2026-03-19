@@ -515,7 +515,7 @@ fn main() {
                 } else {
                     log::info!("Reading sequence names from {}", sc.display());
                     let mut pre_reader = DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-colors file {}: {e}", sc.display()));
+                        .unwrap_or_else(|e| panic!("Could not open sequence-labels file {}: {e}", sc.display()));
                     let mut names = Vec::<String>::new();
                     while let Some(rec) = pre_reader.read_next().unwrap() {
                         names.push(String::from_utf8(rec.name().to_vec()).unwrap());
@@ -528,7 +528,7 @@ fn main() {
 
                 let shared_reader = Arc::new(Mutex::new(
                     DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-colors file {}: {e}", sc.display()))
+                        .unwrap_or_else(|e| panic!("Could not open sequence-labels file {}: {e}", sc.display()))
                 ));
                 let individual_streams: Vec<io::SingleSeqStream> = (0..n_labels)
                     .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
