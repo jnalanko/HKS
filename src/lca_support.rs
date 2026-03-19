@@ -143,6 +143,12 @@ impl LcaSupport {
         Ok(LcaSupport { n, depth, euler, first, answer_table })
     }
 
+    /// Returns the depth of `node` in the tree.
+    #[inline]
+    pub fn depth(&self, node: usize) -> usize {
+        self.depth[node]
+    }
+
     /// Returns the lowest common ancestor of nodes `a` and `b`.
     #[inline]
     pub fn lca(&self, a: usize, b: usize) -> usize {
