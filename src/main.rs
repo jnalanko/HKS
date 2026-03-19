@@ -223,10 +223,10 @@ pub enum Subcommands {
         #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         s: u64,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per label", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label", short, long, help_heading = "Input", conflicts_with = "label_by_seq")]
         label_by_file: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "file_colors")]
+        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "label_by_file")]
         label_by_seq: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
