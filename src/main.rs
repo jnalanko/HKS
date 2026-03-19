@@ -112,7 +112,8 @@ impl ColorIndex {
 
 // It's allowed for there to be names in the hierarchy that are not in the provided names.
 // But every provided name must be in the hierarchy.
-fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> crate::lca_tree::LcaTree {
+// Returns the tree and the names in id order.
+fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
 
     for name in provided_names.iter() {
         if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
@@ -161,16 +162,22 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> crate::lca_
         assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
     }
 
-    crate::lca_tree::LcaTree::new(n_nodes, edges)
-        .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()))
+    // Collect all names, including the new ones we might have found during parsing the tree.
+    let mut all_names: Vec<String> = vec![String::new(); n_nodes];
+    name_to_id.iter().for_each(|(name, id)| all_names[*id] = name.to_string());
+
+    let tree = crate::lca_tree::LcaTree::new(n_nodes, edges)
+        .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()));
+
+    (tree, all_names)
 }
 
-fn build_hierarchy(hierarchy_path: &Option<PathBuf>, all_names: Vec<String>) -> ColorHierarchy {
+fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>) -> ColorHierarchy {
     if let Some(path) = hierarchy_path {
-        let tree = read_hierarchy_file(path, &all_names);
+        let (tree, all_names) = read_hierarchy_file(path, &provided_names);
         ColorHierarchy::with_tree(tree, all_names)
     } else {
-        ColorHierarchy::new_star(all_names)
+        ColorHierarchy::new_star(provided_names)
     }
 }
 
@@ -214,7 +221,7 @@ pub enum Subcommands {
         #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         s: u64,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per label", short, long, help_heading = "Input", conflicts_with = "label_by_seq")]
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label", long, help_heading = "Input", conflicts_with = "label_by_seq")]
         label_by_file: Option<PathBuf>,
 
         #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "label_by_file")]

@@ -30,7 +30,7 @@ The `example/` directory contains a tiny example dataset with three files A.fna,
 ```bash
 hks build \
   -s 10 \
-  --file-colors example/file_of_files.txt \
+  --label-by-file example/file_of_files.txt \
   --hierarchy example/hierarchy.txt \
   --output index.hks
 ```

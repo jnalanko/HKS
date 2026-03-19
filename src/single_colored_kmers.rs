@@ -38,11 +38,9 @@ impl ColorHierarchy {
     }
 
     /// Constructs a hierarchy from a pre-built `LcaTree` and the names of all nodes.
-    /// `names[i]` is the name of node `i` (leaves first, then internal nodes).
-    /// `names.len()` must equal `tree.n_nodes()`.
-    pub fn with_tree(tree: LcaTree, names: Vec<String>) -> Self {
-        assert_eq!(names.len(), tree.n_nodes(), "names must have one entry per tree node");
-        Self { tree, names }
+    pub fn with_tree(tree: LcaTree, node_names: Vec<String>) -> Self {
+        assert_eq!(node_names.len(), tree.n_nodes(), "names must have one entry per tree node");
+        Self { tree, names: node_names }
     }
 
     pub fn tree(&self) -> &LcaTree {
