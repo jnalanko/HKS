@@ -84,7 +84,7 @@ hks lookup \
     -q example/query.fasta \
     -i index.hks \
     -k 5 \
-    --report-color-names \
+    --report-label-names \
     --report-query-names \
     --report-misses
 ```
