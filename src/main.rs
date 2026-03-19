@@ -418,6 +418,9 @@ fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_
         } else {
             LcsArray::from_sbwt(&sbwt, n_threads)
         };
+        if sbwt.k() != s {
+            panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
+        }
         (sbwt, lcs)
     } else {
         let (sbwt, lcs) = if let Some(td) = temp_dir {
@@ -448,6 +451,18 @@ fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_
     }
 }
 
+fn read_all_lines(filename: &Path) -> Vec<String> {
+    let reader = BufReader::new(File::open(filename)
+        .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", filename.display()))
+    );
+    
+    let mut lines: Vec<String> = vec![];
+    for line in reader.lines() {
+        lines.push(line.unwrap())
+    }
+    lines
+}
+
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
@@ -471,24 +486,18 @@ fn main() {
 
             let add_rev_comps = !forward_only;
 
-            // Determine SBWT input paths (all sequences together for k-mer set building)
-            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref lbf) = label_by_file {
-                BufReader::new(File::open(lbf)
-                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", lbf.display())))
-                    .lines().map(|l| PathBuf::from(l.unwrap())).collect()
-            } else {
-                vec![label_by_seq.as_ref().unwrap().clone()]
-            };
-
-            let all_input_seqs = if let Some(unitigs_path) = unitigs_path {
+            // Determine SBWT inputs (all sequences together for k-mer set building)
+            let sbwt_input_stream = if let Some(unitigs_path) = unitigs_path {
                 io::ChainedInputStream::new(vec![unitigs_path.clone()])
             } else {
+                let sbwt_input_paths: Vec<PathBuf> = if let Some(ref lbf) = label_by_file {
+                    read_all_lines(lbf).into_iter().map(|line| PathBuf::from(line)).collect()
+                } else {
+                    vec![label_by_seq.as_ref().unwrap().clone()]
+                };
                 io::ChainedInputStream::new(sbwt_input_paths)
             };
-            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, all_input_seqs, n_threads, add_rev_comps, s);
-            if sbwt.k() != s {
-                panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
-            }
+            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream , n_threads, add_rev_comps, s);
 
             if let Some(fc) = label_by_file {
                 let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
