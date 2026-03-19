@@ -28,10 +28,10 @@ enum ColorIndex { // For now just one variant, might add more later
 }
 
 // If these names change, remember to also update the hardcoded mention in the
-// help text of the --color-names argument in the Build subcommand below.
+// help text of the --labels argument in the Build subcommand below.
 // The duplication exists because Rust's concat!() only accepts literals, so
 // we cannot build a compile-time string from this slice.
-static RESERVED_COLOR_NAMES: &[&str] = &["none", "root"];
+static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
 const HKS_FILE_ID: [u8; 8] = *b"hks0.1.3";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
@@ -177,6 +177,7 @@ fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>
         let (tree, all_names) = read_hierarchy_file(path, &provided_names);
         ColorHierarchy::with_tree(tree, all_names)
     } else {
+        // This will check that "root" is not used as a label
         ColorHierarchy::new_star(provided_names)
     }
 }
@@ -250,7 +251,7 @@ pub enum Subcommands {
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
         // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The names \"none\" and \"root\" are reserved and cannot be used.", long = "labels", help_heading = "Input")]
+        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label \"none\" is reserved and cannot be used.", long = "labels", help_heading = "Input")]
         labels: Option<PathBuf>,
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
