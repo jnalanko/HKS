@@ -157,6 +157,9 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> crate::lca_
     }
 
     assert!(name_to_id.len() == n_nodes, "Number of nodes does not match the number at the top of the file (specified {} nodes, found {})", n_nodes, name_to_id.len());
+    for name in provided_names {
+        assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
+    }
 
     crate::lca_tree::LcaTree::new(n_nodes, edges)
         .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()))
