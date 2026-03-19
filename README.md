@@ -25,7 +25,7 @@ The binary is `target/release/hks`.
 
 The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per color. Both DNA strands are indexed. By default, the names of the colors are the file paths of the input FASTA/FASTQ files. 
 
-The `example/` directory contains a tiny example dataset with three files A.fna, B.fna. C.fna. To index it, run:
+The `example/` directory contains a tiny example dataset with four files A.fna, B.fna, C.fna, D.fna. To index it, run:
 
 ```bash
 hks build \
@@ -38,9 +38,11 @@ hks build \
 This indexes the data with the following color hierarchy.
 
 ```
-    root
+        root
+       /    \
+   clade2   D.fna
    /    \
- clade1   C.fna
+ clade1  C.fna
  /    \
 A.fna  B.fna
 ```
@@ -93,20 +95,20 @@ This will print the following:
 
 ```
 Q1	0	1	clade1
-Q1	1	3	example/A.fasta
+Q1	1	3	example/A.fna
 Q1	3	4	clade1
-Q1	4	5	example/B.fasta
+Q1	4	5	example/B.fna
 Q1	5	7	none
-Q1	7	11	example/C.fasta
-Q1	11	12	root
-Q1	12	15	example/C.fasta
+Q1	7	11	example/C.fna
+Q1	11	12	clade2
+Q1	12	15	root
 Q2	0	1	clade1
-Q2	1	8	example/B.fasta
+Q2	1	8	example/B.fna
 Q2	8	12	none
-Q2	12	14	example/A.fasta
-Q2	14	15	root
+Q2	12	14	example/A.fna
+Q2	14	15	clade2
 Q2	15	19	none
-Q2	19	22	example/C.fasta
+Q2	19	22	example/C.fna
 ```
 
 This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[3,4)` to clade1 again, and so on.

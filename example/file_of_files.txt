@@ -1,3 +1,4 @@
-example/A.fasta
-example/B.fasta
-example/C.fasta
+example/A.fna
+example/B.fna
+example/C.fna
+example/D.fna
