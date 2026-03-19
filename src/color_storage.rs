@@ -57,7 +57,7 @@ impl ColorStorage for SimpleColorStorage {
 
         let mut lca: Option<usize> = None;
         for colex in range {
-            lca = color_hierarchy.lca_options(lca, self.get_color(colex));
+            lca = color_hierarchy.plca_options(lca, self.get_color(colex));
             if lca == Some(color_hierarchy.root()) {
                 // Already at root -> can early exit here
                 return lca
@@ -90,7 +90,7 @@ impl ColorStorage for SimpleColorStorage {
             let mut combined: Option<usize> = None;
             for colex in run.clone() {
                 let color = SimpleColorStorage::get_color_from_slice(bv, bits_per_color, colex - start_element_colex);
-                combined = hierarchy.lca_options(combined, color);
+                combined = hierarchy.plca_options(combined, color);
             }
             for colex in run {
                 SimpleColorStorage::set_color_in_slice(bv, bits_per_color, colex - start_element_colex, combined);

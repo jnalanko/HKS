@@ -146,12 +146,12 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
             //eprintln!("Expanding from {}..{}, (len {})", new_start, new_end, new_end - new_start);
             while new_start > 0 && lcs.get_lcs(new_start) >= self.query_pattern_length {
                 new_start -= 1;
-                color = hierarchy.lca_options(color, self.index.get_color(new_start));
+                color = hierarchy.plca_options(color, self.index.get_color(new_start));
                 if color == Some(root_id) { return Some(color) } // This is a Some(Some(color)). Means that the iterator produced something.
             }
             let n = self.index.sbwt.n_sets();
             while new_end < n && lcs.get_lcs(new_end) >= self.query_pattern_length {
-                color = hierarchy.lca_options(color, self.index.get_color(new_end));
+                color = hierarchy.plca_options(color, self.index.get_color(new_end));
                 if color == Some(root_id) { return Some(color) } // This is a Some(Some(color)). Means that the iterator produced something.
                 new_end += 1;
             }
@@ -175,7 +175,7 @@ impl<T: AtomicUint> AtomicColorVec for Vec<T> {
             if cur == Self::none_sentinel() {
                 x               // first assignment: replace none with color
             } else {
-                lca.lca(cur, x) // subsequent: merge via LCA
+                lca.plca(cur, x) // subsequent: merge via priority-aware LCA
             }
         });
     }
@@ -660,13 +660,13 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                     // We must only count this if the dummy has length at least s.
                     let dummy_len = self.sbwt.access_kmer(run_start).iter().filter(|c| **c != b'$').count();
                     if dummy_len >= s {
-                        lca = self.hierarchy.tree().lca_options(lca, self.colors.get_color(run_start));
+                        lca = self.hierarchy.tree().plca_options(lca, self.colors.get_color(run_start));
                     }
                 } else {
                     // Since the length of the range is at least 2, all s-mers in the range
                     // are dollar-free: otherwise we would have a duplicate dummy.
                     for pos in run_start..run_end {
-                        lca = self.hierarchy.tree().lca_options(lca, self.colors.get_color(pos));
+                        lca = self.hierarchy.tree().plca_options(lca, self.colors.get_color(pos));
                     }
                 }
                 if let Some(x) = lca {
@@ -766,7 +766,7 @@ mod tests {
                 if colex - run_start > 1 {
                     let mut merged: Option<usize> = None;
                     for pos in run_start..colex {
-                        merged = hierarchy.lca_options(merged, colors.get_color(pos));
+                        merged = hierarchy.plca_options(merged, colors.get_color(pos));
                     }
                     for pos in run_start..colex {
                         colors.set_color(pos, merged);
