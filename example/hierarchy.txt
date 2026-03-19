@@ -1,6 +1,4 @@
-2 4
-clade1
-root
+5
 example/A.fasta clade1
 example/B.fasta clade1
 clade1 root

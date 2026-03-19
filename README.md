@@ -115,11 +115,10 @@ This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[
 
 By default, HKS uses a star topology: all colors are children of a single root node. The `--hierarchy` flag lets you supply a custom tree so that k-mers are reported at their Lowest Common Ancestor (LCA) when they appear in multiple colors.
 
-The file has three sections:
+The file has two sections:
 
-1. **Header line**: two integers: `<n_internal_nodes> <n_edges>`
-2. **Internal node names**: one name per line, `n_internal_nodes` lines. These are the non-leaf nodes of the tree. IDs are assigned to them starting right after the leaf (color) IDs, in the order they appear here.
-3. **Edge list**: one edge per line, `n_edges` lines. Each line is `<child_name> <parent_name>` (whitespace-separated). Both names must be either a color name (leaf) or an internal node name declared above.
+1. **Header line**: one integer: `<n_nodes>`, the total number of nodes in the tree.
+2. **Edge list**: one edge per line, `n_nodes - 1` lines. Each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--labels` must appear in at least one edge. There can also be labels that were not provided with `--labels`.
 
 See `example/hierarchy.txt` for an example.
 
