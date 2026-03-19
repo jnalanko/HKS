@@ -224,10 +224,10 @@ pub enum Subcommands {
         s: u64,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per label", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
-        file_colors: Option<PathBuf>,
+        label_by_file: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single file, one sequence per label", long, help_heading = "Input", conflicts_with = "file_colors")]
-        sequence_colors: Option<PathBuf>,
+        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "file_colors")]
+        label_by_seq: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
         unitigs: Option<PathBuf>,
@@ -408,7 +408,9 @@ fn read_color_names_file(path: &PathBuf) -> Vec<String> {
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info")
+        // This is now unsafe since Rust 2024. Apparently
+        // it's a flaw in Unix itself and cannot be called safely.
+        unsafe { std::env::set_var("RUST_LOG", "info") }
     }
     env_logger::init();
 
@@ -417,7 +419,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -427,12 +429,12 @@ fn main() {
             let add_rev_comps = !forward_only;
 
             // Determine SBWT input paths (all sequences together for k-mer set building)
-            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref fc) = file_colors {
-                BufReader::new(File::open(fc)
-                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
+            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref lbf) = label_by_file {
+                BufReader::new(File::open(lbf)
+                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", lbf.display())))
                     .lines().map(|l| PathBuf::from(l.unwrap())).collect()
             } else {
-                vec![sequence_colors.as_ref().unwrap().clone()]
+                vec![label_by_seq.as_ref().unwrap().clone()]
             };
 
             let (sbwt, lcs) = if let Some(sbwt_path) = sbwt_path {
@@ -483,7 +485,7 @@ fn main() {
                 (sbwt, lcs)
             };
 
-            if let Some(fc) = file_colors {
+            if let Some(fc) = label_by_file {
                 let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
                     .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
                     .lines().map(|l| PathBuf::from(l.unwrap())).collect();
@@ -502,7 +504,7 @@ fn main() {
                     .collect();
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
-                let sc = sequence_colors.unwrap();
+                let sc = label_by_seq.unwrap();
 
                 let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
                     log::info!("Reading label names from {}", names_path.display());
