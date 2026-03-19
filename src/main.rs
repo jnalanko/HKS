@@ -268,7 +268,7 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
-        #[arg(help = "Print label names instead of label rank integers. K-mers present in multiple labels 'root' when this flag is set.", long = "report-label-names")]
+        #[arg(help = "Print label names instead of label id integers.", long = "report-label-names")]
         report_color_names: bool,
 
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
