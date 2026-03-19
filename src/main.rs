@@ -129,21 +129,13 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca
 
     let lines = read_all_lines(path);
 
-    // First line: n (total number of nodes)
-    let first_line = lines.first()
-        .unwrap_or_else(|| panic!("Hierarchy file {} is empty", path.display()));
-    let n_nodes: usize = first_line.trim().parse()
-        .unwrap_or_else(|_| panic!("Hierarchy file: first line must be the number of nodes, got '{first_line}'"));
-    assert!(n_nodes > 0);
-    let n_edges_in_file = lines.len()-1;
-    assert!(n_edges_in_file == n_nodes-1, "Error: hierarchy file needs to have n-1 edges, where n is the number of nodes (specified {} nodes, found {} edges).", n_nodes, n_edges_in_file);
-
-    // Read n-1 edges as (child, parent) name pairs
-    let mut edges = Vec::<(usize, usize)>::with_capacity(n_edges_in_file);
-    for (i, line) in lines[1..].iter().enumerate() {
+    // Read edges as (child, parent) name pairs; one edge per line
+    let mut edges = Vec::<(usize, usize)>::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() { continue; }
         let mut parts = line.split_whitespace();
-        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name in edge {i}"));
-        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name in edge {i}"));
+        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name on line {i}"));
+        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name on line {i}"));
         let child_id = name_to_id.get(child_name).copied().unwrap_or_else(|| {
             let new_id = name_to_id.len();
             name_to_id.insert(child_name, new_id);
@@ -157,11 +149,11 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca
         edges.push((child_id, parent_id));
     }
 
-    assert!(name_to_id.len() == n_nodes, "Number of nodes does not match the number at the top of the file (specified {} nodes, found {})", n_nodes, name_to_id.len());
     for name in provided_names {
         assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
     }
 
+    let n_nodes = name_to_id.len();
     // Collect all names, including the new ones we might have found during parsing the tree.
     let mut all_names: Vec<String> = vec![String::new(); n_nodes];
     name_to_id.iter().for_each(|(name, id)| all_names[*id] = name.to_string());

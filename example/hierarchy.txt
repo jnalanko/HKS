@@ -1,4 +1,3 @@
-7
 example/A.fna clade1
 example/B.fna clade1
 clade1 clade2
