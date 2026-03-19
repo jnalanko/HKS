@@ -119,9 +119,29 @@ The file has three sections:
 
 1. **Header line**: two integers: `<n_internal_nodes> <n_edges>`
 2. **Internal node names**: one name per line, `n_internal_nodes` lines. These are the non-leaf nodes of the tree. IDs are assigned to them starting right after the leaf (color) IDs, in the order they appear here.
-3. **Edge list**: one edge per line, `n_edges` lines. Each line is `<child_name> <parent_name>` (whitespace-separated). Both names must be either a color name (leaf) or an internal node name declared above.
+3. **Edge list**: one edge per line, `n_edges` lines. Each line is `<child_name> <parent_name> [priority]` (whitespace-separated). Both names must be either a color name (leaf) or an internal node name declared above. The optional third column is an integer priority for the child node (see below).
 
 See `example/hierarchy.txt` for an example.
+
+#### Priorities
+
+By default, when a k-mer appears in multiple colors, it is labeled with their Lowest Common Ancestor (LCA) in the hierarchy. **Priorities** give you more control: you can declare that certain categories are more important than their siblings, so that shared k-mers are assigned to the higher-priority category instead of falling back to the LCA.
+
+To use priorities, add an integer as the third column on each edge line. Lower numbers mean higher priority. For example:
+
+```
+2 4
+clade1
+root
+A clade1 1
+B clade1 2
+clade1 root 2
+C root 1
+```
+
+Here, C has priority 1 and clade1 has priority 2 under root. A k-mer shared between A and C would be assigned to C (since C's parent-level priority is higher) instead of root.
+
+For any group of siblings, priorities must be either all omitted (or all the same value) or all distinct. A mix of same and distinct priorities among siblings is not allowed. If you want some siblings to share a priority while others differ, add a named grouping node as the parent of the tied siblings.
 
 ### Other subcommands
 

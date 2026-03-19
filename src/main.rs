@@ -150,8 +150,13 @@ fn read_hierarchy_file(path: &PathBuf, leaf_names: &[String]) -> (crate::lca_tre
         name_to_id.insert(name.as_str(), leaf_count + i);
     }
 
-    // Read edges
+    // Read edges, with optional priority as a third column.
+    // Format: "child parent [priority]"
+    // Priority is an integer (lower = higher priority). If omitted, defaults to 0.
+    let n = leaf_count + n_internal;
     let mut edges = Vec::with_capacity(n_edges);
+    let mut priorities = vec![0usize; n]; // default priority 0 for all nodes
+    let mut any_priority_specified = false;
     for i in 0..n_edges {
         let line = lines.next()
             .unwrap_or_else(|| panic!("Hierarchy file: expected edge on line {}", leaf_count + i + 2))
@@ -164,11 +169,25 @@ fn read_hierarchy_file(path: &PathBuf, leaf_names: &[String]) -> (crate::lca_tre
         let parent_id = *name_to_id.get(parent_name)
             .unwrap_or_else(|| panic!("Hierarchy file: unknown node name '{parent_name}'"));
         edges.push((child_id, parent_id));
+
+        // Optional third column: priority for the child node.
+        if let Some(pri_str) = parts.next() {
+            let pri: usize = pri_str.parse()
+                .unwrap_or_else(|_| panic!("Hierarchy file: invalid priority '{}' for edge {} -> {} (expected a non-negative integer)",
+                    pri_str, child_name, parent_name));
+            priorities[child_id] = pri;
+            any_priority_specified = true;
+        }
     }
 
-    let n = leaf_count + n_internal;
-    let tree = crate::lca_tree::LcaTree::new(n, edges)
+    let mut tree = crate::lca_tree::LcaTree::new(n, edges)
         .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()));
+
+    if any_priority_specified {
+        tree.set_priorities(priorities)
+            .unwrap_or_else(|e| panic!("Invalid priorities in hierarchy file {}: {e}", path.display()));
+    }
+
     (tree, internal_names)
 }
 
