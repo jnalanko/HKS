@@ -1,8 +1,8 @@
 use crate::lca_tree::LcaTree;
 use crate::traits::*;
-use crate::wavelet_tree::WaveletTreeWrapper;
+
 use bitvec_sds::traits::RandomAccessU32;
-use rayon::iter::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde::{Serialize, Deserialize};
 use bitvec::prelude::*;
 use std::io::{Read, Write};
