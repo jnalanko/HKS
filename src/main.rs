@@ -252,8 +252,8 @@ pub enum Subcommands {
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
         // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as label names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "label-names", help_heading = "Input")]
-        color_names_file: Option<PathBuf>,
+        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The names \"none\" and \"root\" are reserved and cannot be used.", long = "labels", help_heading = "Input")]
+        labels: Option<PathBuf>,
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
@@ -419,7 +419,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -489,7 +489,9 @@ fn main() {
                 let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
                     .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
                     .lines().map(|l| PathBuf::from(l.unwrap())).collect();
-                let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
+
+                // Read labels from file, or use filenames as default
+                let label_names: Vec<String> = if let Some(ref names_path) = label_names_file {
                     let names = read_color_names_file(names_path);
                     if names.len() != input_paths.len() {
                         panic!("Label names file has {} names but there are {} input files", names.len(), input_paths.len());
@@ -498,7 +500,7 @@ fn main() {
                 } else {
                     input_paths.iter().map(|p| p.as_os_str().to_str().unwrap().to_owned()).collect()
                 };
-                let hierarchy = build_hierarchy(&hierarchy_path, color_names);
+                let hierarchy = build_hierarchy(&hierarchy_path, label_names);
                 let individual_streams: Vec<LazyFileSeqStream> = input_paths.iter()
                     .map(|p| LazyFileSeqStream::new(p.clone(), add_rev_comps))
                     .collect();
@@ -506,7 +508,8 @@ fn main() {
             } else {
                 let sc = label_by_seq.unwrap();
 
-                let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
+                // Read labels from file, or use sequence names as default
+                let label_names: Vec<String> = if let Some(ref names_path) = label_names_file {
                     log::info!("Reading label names from {}", names_path.display());
                     read_color_names_file(names_path)
                 } else {
@@ -520,14 +523,14 @@ fn main() {
                     names
                 };
 
-                let n_colors = color_names.len();
-                let hierarchy = build_hierarchy(&hierarchy_path, color_names);
+                let n_labels = label_names.len();
+                let hierarchy = build_hierarchy(&hierarchy_path, label_names);
 
                 let shared_reader = Arc::new(Mutex::new(
                     DynamicFastXReader::from_file(&sc)
                         .unwrap_or_else(|e| panic!("Could not open sequence-colors file {}: {e}", sc.display()))
                 ));
-                let individual_streams: Vec<io::SingleSeqStream> = (0..n_colors)
+                let individual_streams: Vec<io::SingleSeqStream> = (0..n_labels)
                     .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
                     .collect();
 
