@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use clap::{Parser, Subcommand};
-use io::LazyFileSeqStream;
+use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
 use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SubsetMatrix};
 use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
@@ -476,6 +476,37 @@ fn get_coloring_input_for_file_mode(file_of_files_path: &Path, labels_path: Opti
     (hierarchy, individual_streams)
 }
 
+fn get_coloring_input_for_sequence_mode(seq_file: &Path, labels_path: Option<&PathBuf>, hierarchy_path: &Option<PathBuf>, add_rev_comps: bool) -> (ColorHierarchy, Vec<SingleSeqStream>) {
+    // Read labels from file, or use sequence names as default
+    let labels: Vec<String> = if let Some(ref names_path) = labels_path {
+        log::info!("Reading label names from {}", names_path.display());
+        read_all_lines(names_path)
+    } else {
+        log::info!("Reading sequence names from {}", seq_file.display());
+        let mut pre_reader = DynamicFastXReader::from_file(&seq_file)
+            .unwrap_or_else(|e| panic!("Could not open sequence file {}: {e}", seq_file.display()));
+        let mut names = Vec::<String>::new();
+        while let Some(rec) = pre_reader.read_next().unwrap() {
+            names.push(String::from_utf8(rec.name().to_vec()).unwrap());
+        }
+        names
+    };
+
+    let n_labels = labels.len();
+    let hierarchy = build_hierarchy(&hierarchy_path, labels);
+
+    let shared_reader = Arc::new(Mutex::new(
+        DynamicFastXReader::from_file(&seq_file)
+            .unwrap_or_else(|e| panic!("Could not open sequence file {}: {e}", seq_file.display()))
+    ));
+    let individual_streams: Vec<io::SingleSeqStream> = (0..n_labels)
+        .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
+        .collect();
+
+    (hierarchy, individual_streams)
+
+}
+
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
@@ -516,34 +547,7 @@ fn main() {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
-                let sc = label_by_seq.unwrap();
-
-                // Read labels from file, or use sequence names as default
-                let label_names: Vec<String> = if let Some(ref names_path) = label_names_file {
-                    log::info!("Reading label names from {}", names_path.display());
-                    read_color_names_file(names_path)
-                } else {
-                    log::info!("Reading sequence names from {}", sc.display());
-                    let mut pre_reader = DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-labels file {}: {e}", sc.display()));
-                    let mut names = Vec::<String>::new();
-                    while let Some(rec) = pre_reader.read_next().unwrap() {
-                        names.push(String::from_utf8(rec.name().to_vec()).unwrap());
-                    }
-                    names
-                };
-
-                let n_labels = label_names.len();
-                let hierarchy = build_hierarchy(&hierarchy_path, label_names);
-
-                let shared_reader = Arc::new(Mutex::new(
-                    DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-labels file {}: {e}", sc.display()))
-                ));
-                let individual_streams: Vec<io::SingleSeqStream> = (0..n_labels)
-                    .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
-                    .collect();
-
+                let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             }
 
