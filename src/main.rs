@@ -110,9 +110,11 @@ impl ColorIndex {
     }
 }
 
-fn read_hierarchy_file(path: &PathBuf, all_names: &[String]) -> crate::lca_tree::LcaTree {
+// It's allowed for there to be names in the hierarchy that are not in the provided names.
+// But every provided name must be in the hierarchy.
+fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> crate::lca_tree::LcaTree {
 
-    for name in all_names.iter() {
+    for name in provided_names.iter() {
         if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
             panic!("Error: can not use \"{}\" as a label name because it is a reserved name", name);
         }
@@ -120,8 +122,8 @@ fn read_hierarchy_file(path: &PathBuf, all_names: &[String]) -> crate::lca_tree:
 
     // Build map: label -> id
     let mut name_to_id = HashMap::<&str, usize>::new();
-    for (id, name) in all_names.iter().enumerate() {
-        name_to_id.insert(name, id);
+    for name in provided_names.iter() {
+        name_to_id.insert(name, name_to_id.len());
     }
 
     let lines = read_all_lines(path);
@@ -141,12 +143,20 @@ fn read_hierarchy_file(path: &PathBuf, all_names: &[String]) -> crate::lca_tree:
         let mut parts = line.split_whitespace();
         let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name in edge {i}"));
         let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name in edge {i}"));
-        let child_id = *name_to_id.get(child_name)
-            .unwrap_or_else(|| panic!("Hierarchy file: unknown node name '{child_name}'"));
-        let parent_id = *name_to_id.get(parent_name)
-            .unwrap_or_else(|| panic!("Hierarchy file: unknown node name '{parent_name}'"));
+        let child_id = name_to_id.get(child_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(child_name, new_id);
+            new_id
+        });
+        let parent_id = name_to_id.get(parent_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(parent_name, new_id);
+            new_id
+        });
         edges.push((child_id, parent_id));
     }
+
+    assert!(name_to_id.len() == n_nodes, "Number of nodes does not match the number at the top of the file (specified {} nodes, found {})", n_nodes, name_to_id.len());
 
     crate::lca_tree::LcaTree::new(n_nodes, edges)
         .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()))
