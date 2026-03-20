@@ -268,9 +268,6 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
-        #[arg(help = "Print label names instead of label id integers.", long = "report-label-names")]
-        report_color_names: bool,
-
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
         report_query_names: bool,
 
@@ -282,6 +279,10 @@ pub enum Subcommands {
 
         #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
         batch_size: u64,
+
+        #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --dump-labels to obtain a table to translate ids to names.", long = "report-label-ids", help_heading = "Advanced")]
+        report_label_ids: bool,
+
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -544,7 +545,7 @@ fn main() {
 
         },
 
-        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_color_names, report_query_names, report_misses, no_header, batch_size} => {
+        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_label_ids, report_query_names, report_misses, no_header, batch_size} => {
 
             let (n_threads, batch_size) = (n_threads as usize, batch_size as usize);
             
@@ -561,14 +562,14 @@ fn main() {
                 panic!("Error: query k = {} larger than indexing s = {}", k, index.k());
             }
 
-            let color_names = report_color_names.then(|| index.color_names().to_vec());
-            let seq_names = report_query_names.then(|| load_seq_names(&query_path));
+            let color_names = if report_label_ids { None } else { Some(index.color_names().to_vec())};
+            let seq_names = if report_query_names { Some(load_seq_names(&query_path)) } else { None };
 
             let reader = DynamicFastXReader::from_file(&query_path)
                 .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
 
             let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
-            let writer = OutputWriter::new(stdout, seq_names, color_names, index.root_id(), report_misses, !no_header);
+            let writer = OutputWriter::new(stdout, seq_names, color_names, report_misses, !no_header);
 
             log::info!("Running queries from {} ...", query_path.display());
             run_queries(n_threads, reader, index, batch_size, k, writer);

@@ -234,14 +234,14 @@ fn lookup_with_k() {
 }
 
 #[test]
-fn lookup_report_label_names() {
+fn lookup_report_label_ids() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
     build_basic_index(&index);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
-        .args(["--report-label-names"])
+        .args(["--report-label-ids"])
         .status()
         .unwrap();
     assert!(status.success());
