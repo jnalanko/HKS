@@ -3,7 +3,7 @@
 import numpy as np
 
 HKS_HIERARCHY_FILE = "preprint_results/hks_hierarchy_dump.txt"
-QUERY_NAMES_FILE   = "query/names.txt"
+QUERY_NAMES_FILE   = "preprint_results/query_names.txt"
 
 # Fixed display order for classification labels (y-axis), top to bottom.
 # invert_yaxis() is used, so ordered_rows is stored bottom-to-top (reversed).
