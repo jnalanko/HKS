@@ -137,3 +137,19 @@ See `example/hierarchy.txt` for an example.
 ### Other subcommands
 
 Run the binary without arguments for more subcommands and their documentation.
+
+### Citation
+
+```
+@article{alanko2026hierarchical,
+    title        = {Hierarchical genomic feature annotation with variable-length queries},
+    author       = {Alanko, Jarno N. and Ranallo-Benavidez, T. Rhyker and Barthel, Floris P. and Puglisi, Simon  J. and Marchet, Camille},
+    year         = {2026},
+    month        = {March},
+    day          = {18},
+    doi          = {10.64898/2026.03.15.711907},
+    url          = {https://www.biorxiv.org/content/10.64898/2026.03.15.711907v1},
+    publisher    = {bioRxiv},
+    note         = {Preprint}
+}
+```
