@@ -21,9 +21,9 @@ The binary is `target/release/hks`.
 
 ## Usage
 
-### Build an index TODO update "color" -> "label"
+### Build an index
 
-The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per color. Both DNA strands are indexed. By default, the names of the colors are the file paths of the input FASTA/FASTQ files. 
+The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per label. Both DNA strands are indexed. By default, the labels are the file paths of the input FASTA/FASTQ files. 
 
 The `example/` directory contains a tiny example dataset with four files A.fna, B.fna, C.fna, D.fna. To index it, run:
 
@@ -35,7 +35,7 @@ hks build \
   --output index.hks
 ```
 
-This indexes the data with the following color hierarchy.
+This indexes the data with the following label hierarchy.
 
 ```
         root
@@ -61,23 +61,18 @@ Options:
   -h, --help                        Print help
 
 Input:
-  -f, --file-colors <FILE_COLORS>
-          A file with one fasta/fastq filename per line, one per color
-      --sequence-colors <SEQUENCE_COLORS>
-          Give input as a single file, one sequence per color
-  -u, --unitigs <UNITIGS>
-          Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
-      --color-names <COLOR_NAMES_FILE>
-          Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names "none" and "root" are reserved and cannot be used.
-      --hierarchy <HIERARCHY>
-          Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root, named "root").
+      --label-by-file <LABEL_BY_FILE>  A file with one fasta/fastq filename per line, one per label
+      --label-by-seq <LABEL_BY_SEQ>    Give input as a single FASTA file, one sequence per label
+  -u, --unitigs <UNITIGS>              Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
+      --labels <LABELS>                Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label "none" is reserved and cannot be used.
+      --hierarchy <HIERARCHY>          Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named "root").
 
 Advanced use:
   -b, --sbwt-path <SBWT_PATH>  Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
   -l, --lcs-path <LCS_PATH>    Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
 ```
 
-### Query k-mers TODO update "color" -> "label"
+### Query k-mers
 
 To query the index built above with k-mer length 5 and the input file `example/query.fasta`, run the following:
 
@@ -112,11 +107,30 @@ Q2	19	22	example/C.fna
 
 This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[3,4)` to clade1 again, and so on.
 
+
+The full query options are as follows:
+
+```
+Usage: hks lookup [OPTIONS] --query <QUERY> --index <INDEX>
+
+Options:
+  -q, --query <QUERY>          A fasta/fastq query file
+  -i, --index <INDEX>          Path to the index file
+  -t, --n-threads <N_THREADS>  Number of parallel threads [default: 4]
+  -k <K>                       Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.
+      --report-query-names     Print query names instead of query rank integers.
+      --report-misses          Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-label-names is set.
+      --no-header              Do not print the header line.
+  -h, --help                   Print help
+
+Advanced:
+      --batch-size <BATCH_SIZE>  Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism. [default: 1000000]
+      --report-label-ids         Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.
+```
+
 ### Hierarchy file format
 
-By default, HKS uses a star topology: all colors are children of a single root node. The `--hierarchy` flag lets you supply a custom tree so that k-mers are reported at their Lowest Common Ancestor (LCA) when they appear in multiple colors.
-
-The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--labels` must appear in at least one edge. There can also be labels that were not provided with `--labels`.
+By default, HKS uses a star topology: all labels are children of a single root node. The `--hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--labels` must appear in at least one edge. There can also be labels that were not provided with `--labels`.
 
 See `example/hierarchy.txt` for an example.
 
