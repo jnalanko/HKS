@@ -309,7 +309,7 @@ pub enum Subcommands {
         n_threads: usize,
     },
 
-    #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line, then all edges as space-separated child parent pairs one per line.")]
+    #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line (ids 0,1,2...), then all edges as space-separated child parent pairs one per line.")]
     PrintHierarchy {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
