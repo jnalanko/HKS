@@ -38,6 +38,7 @@ zcat CHM13/chm13v2.0.fa.gz | awk '
 '
 
 zcat query/hg002v1.1.fasta.gz | grep ">" | sed 's/^>//' > query/names.txt
+zcat query/hg002v1.1.fasta.gz > query/hg002v1.1.fasta
 zcat CHM13/chm13v2.0.fa.gz | awk '/^>/ { print substr($1, 2) }' > feature_tree/chromosome_names.txt
 ```
 
