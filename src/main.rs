@@ -1,10 +1,10 @@
 #![allow(non_snake_case, clippy::needless_range_loop, clippy::len_zero)] // Using upper-case variable names from the source material
 
-use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::PathBuf, sync::{Arc, Mutex}};
+use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use clap::{Parser, Subcommand};
-use io::LazyFileSeqStream;
+use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
-use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray};
+use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SubsetMatrix};
 use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
 use parallel_queries::OutputWriter;
 
@@ -28,10 +28,10 @@ enum ColorIndex { // For now just one variant, might add more later
 }
 
 // If these names change, remember to also update the hardcoded mention in the
-// help text of the --color-names argument in the Build subcommand below.
+// help text of the --labels argument in the Build subcommand below.
 // The duplication exists because Rust's concat!() only accepts literals, so
 // we cannot build a compile-time string from this slice.
-static RESERVED_COLOR_NAMES: &[&str] = &["none", "root"];
+static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
 const HKS_FILE_ID: [u8; 8] = *b"hks0.1.3";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
@@ -97,6 +97,12 @@ impl ColorIndex {
         }
     }
 
+    fn color_hierarchy(&self) -> &crate::lca_tree::LcaTree {
+        match self {
+            ColorIndex::FixedK(index) => index.color_hierarchy(),
+        }
+    }
+
     fn n_kmers(&self) -> usize {
         match self {
             ColorIndex::FixedK(index) => index.n_kmers(),
@@ -110,76 +116,67 @@ impl ColorIndex {
     }
 }
 
-// Returns the LcaTree and the internal node names (in node-ID order, after all leaf IDs).
-fn read_hierarchy_file(path: &PathBuf, leaf_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
+// It's allowed for there to be names in the hierarchy that are not in the provided names.
+// But every provided name must be in the hierarchy.
+// Returns the tree and the names in id order.
+fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
 
-    for name in leaf_names.iter() {
+    for name in provided_names.iter() {
         if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
-            panic!("Error: can not use \"{}\" as a color name because it is a reserved name", name);
+            panic!("Error: can not use \"{}\" as a label name because it is a reserved name", name);
         }
     }
 
+    // Build map: label -> id
     let mut name_to_id = HashMap::<&str, usize>::new();
-    for (id, name) in leaf_names.iter().enumerate() {
-        name_to_id.insert(name, id);
+    for name in provided_names.iter() {
+        name_to_id.insert(name, name_to_id.len());
     }
 
-    let file = File::open(path)
-        .unwrap_or_else(|e| panic!("Could not open hierarchy file {}: {e}", path.display()));
-    let mut lines = BufReader::new(file).lines();
+    let lines = read_all_lines(path);
 
-    // First line: n_internal_nodes n_edges
-    let first_line = lines.next()
-        .unwrap_or_else(|| panic!("Hierarchy file {} is empty", path.display()))
-        .unwrap();
-    let mut parts = first_line.split_whitespace();
-    let n_internal: usize = parts.next().unwrap().parse().unwrap();
-    let n_edges: usize = parts.next().unwrap().parse().unwrap();
-
-    // Read internal node names and assign IDs starting after leaf IDs
-    let leaf_count = leaf_names.len();
-    let mut internal_names = Vec::with_capacity(n_internal);
-    for i in 0..n_internal {
-        let name = lines.next()
-            .unwrap_or_else(|| panic!("Hierarchy file: expected internal node name on line {}", i + 2))
-            .unwrap();
-        internal_names.push(name);
-    }
-    // Insert with stable string references from internal_names
-    for (i, name) in internal_names.iter().enumerate() {
-        name_to_id.insert(name.as_str(), leaf_count + i);
-    }
-
-    // Read edges
-    let mut edges = Vec::with_capacity(n_edges);
-    for i in 0..n_edges {
-        let line = lines.next()
-            .unwrap_or_else(|| panic!("Hierarchy file: expected edge on line {}", leaf_count + i + 2))
-            .unwrap();
+    // Read edges as (child, parent) name pairs; one edge per line
+    let mut edges = Vec::<(usize, usize)>::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() { continue; }
         let mut parts = line.split_whitespace();
-        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name in edge {i}"));
-        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name in edge {i}"));
-        let child_id = *name_to_id.get(child_name)
-            .unwrap_or_else(|| panic!("Hierarchy file: unknown node name '{child_name}'"));
-        let parent_id = *name_to_id.get(parent_name)
-            .unwrap_or_else(|| panic!("Hierarchy file: unknown node name '{parent_name}'"));
+        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name on line {i}"));
+        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name on line {i}"));
+        let child_id = name_to_id.get(child_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(child_name, new_id);
+            new_id
+        });
+        let parent_id = name_to_id.get(parent_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(parent_name, new_id);
+            new_id
+        });
         edges.push((child_id, parent_id));
     }
 
-    let n = leaf_count + n_internal;
-    let tree = crate::lca_tree::LcaTree::new(n, edges)
+    for name in provided_names {
+        assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
+    }
+
+    let n_nodes = name_to_id.len();
+    // Collect all names, including the new ones we might have found during parsing the tree.
+    let mut all_names: Vec<String> = vec![String::new(); n_nodes];
+    name_to_id.iter().for_each(|(name, id)| all_names[*id] = name.to_string());
+
+    let tree = crate::lca_tree::LcaTree::new(n_nodes, edges)
         .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()));
-    (tree, internal_names)
+
+    (tree, all_names)
 }
 
-fn build_hierarchy(hierarchy_path: &Option<PathBuf>, leaf_names: Vec<String>) -> ColorHierarchy {
+fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>) -> ColorHierarchy {
     if let Some(path) = hierarchy_path {
-        let (tree, internal_names) = read_hierarchy_file(path, &leaf_names);
-        let mut all_names = leaf_names;
-        all_names.extend(internal_names);
+        let (tree, all_names) = read_hierarchy_file(path, &provided_names);
         ColorHierarchy::with_tree(tree, all_names)
     } else {
-        ColorHierarchy::new_star(leaf_names)
+        // This will check that "root" is not used as a label
+        ColorHierarchy::new_star(provided_names)
     }
 }
 
@@ -223,11 +220,11 @@ pub enum Subcommands {
         #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         s: u64,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per color", short, long, help_heading = "Input", conflicts_with = "sequence_colors")]
-        file_colors: Option<PathBuf>,
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label", long, help_heading = "Input", conflicts_with = "label_by_seq")]
+        label_by_file: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single file, one sequence per color", long, help_heading = "Input", conflicts_with = "file_colors")]
-        sequence_colors: Option<PathBuf>,
+        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "label_by_file")]
+        label_by_seq: Option<PathBuf>,
 
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
         unitigs: Option<PathBuf>,
@@ -252,13 +249,13 @@ pub enum Subcommands {
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
         // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one color name per line, in the same order as the input files. Defaults to using the input filenames as color names. The names \"none\" and \"root\" are reserved and cannot be used.", long = "color-names", help_heading = "Input")]
-        color_names_file: Option<PathBuf>,
+        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label \"none\" is reserved and cannot be used.", long = "labels", help_heading = "Input")]
+        labels: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file describing the color hierarchy tree. Defaults to a star (all colors as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
+        #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Hidden option: After building, turn all \"none\" colors into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
+        #[arg(help = "Hidden option: After building, turn all \"none\" labels into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
         none_to_multiple: bool,
 
     },
@@ -277,13 +274,10 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
-        #[arg(help = "Print color names instead of color rank integers. K-mers present in multiple colors 'root' when this flag is set.", long = "report-color-names")]
-        report_color_names: bool,
-
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
         report_query_names: bool,
 
-        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-color-names is set.", long = "report-misses")]
+        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-label-names is set.", long = "report-misses")]
         report_misses: bool,
 
         #[arg(help = "Do not print the header line.", long = "no-header")]
@@ -291,6 +285,10 @@ pub enum Subcommands {
 
         #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
         batch_size: u64,
+
+        #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.", long = "report-label-ids", help_heading = "Advanced")]
+        report_label_ids: bool,
+
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -304,11 +302,17 @@ pub enum Subcommands {
         #[arg(help = "Path to the index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Print color names instead of color ids", long = "report-color-names")]
+        #[arg(help = "Print label names instead of label ids", long = "report-label-names")]
         report_color_names: bool,
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
+    },
+
+    #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line (ids 0,1,2...), then all edges as space-separated child parent pairs, one per line.")]
+    PrintHierarchy {
+        #[arg(help = "Path to the index file", short, long, required = true)]
+        index: PathBuf,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -372,7 +376,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     index.build_sbwt_select();
 
     let stdout_mutex = std::sync::Mutex::new(std::io::BufWriter::new(std::io::stdout()));
-    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "k\tcolor\tcount").unwrap(); h.flush().unwrap(); }
+    { let mut h = stdout_mutex.lock().unwrap(); writeln!(h, "k\tlabel\tcount").unwrap(); h.flush().unwrap(); }
 
     let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
     thread_pool.install(|| {
@@ -396,19 +400,123 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     });
 }
 
-// Reads a color names file with one name per line.
-fn read_color_names_file(path: &PathBuf) -> Vec<String> {
-    BufReader::new(File::open(path)
-        .unwrap_or_else(|e| panic!("Could not open color names file {}: {e}", path.display())))
-        .lines()
-        .map(|l| l.unwrap())
-        .collect()
+// Load SBWT and LCS, or build from scratch if not given
+fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_dir: Option<PathBuf>, all_input_seqs: io::ChainedInputStream, n_threads: usize, add_rev_comps: bool, s: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
+    if let Some(sbwt_path) = sbwt_path {
+        let mut input = BufReader::new(File::open(&sbwt_path)
+            .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
+        let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
+        log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
+        let lcs = if let Some(lcs_path) = lcs_path {
+            LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
+                .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
+        } else {
+            LcsArray::from_sbwt(&sbwt, n_threads)
+        };
+        if sbwt.k() != s {
+            panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
+        }
+        (sbwt, lcs)
+    } else {
+        let (sbwt, lcs) = if let Some(td) = temp_dir {
+            // Use disk-based construction
+            sbwt::SbwtIndexBuilder::new()
+                .add_rev_comp(add_rev_comps)
+                .k(s)
+                .build_lcs(true)
+                .n_threads(n_threads)
+                .precalc_length(8)
+                .add_all_dummy_paths(true) // This is required for multi-k support
+                .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
+            .run(all_input_seqs)
+        } else {
+            // Use in-memory construction
+            sbwt::SbwtIndexBuilder::new()
+                .add_rev_comp(add_rev_comps)
+                .k(s)
+                .build_lcs(true)
+                .n_threads(n_threads)
+                .precalc_length(8)
+                .add_all_dummy_paths(true) // This is required for multi-k support
+                .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
+            .run(all_input_seqs)
+        };
+        let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
+        (sbwt, lcs)
+    }
+}
+
+fn read_all_lines(filename: &Path) -> Vec<String> {
+    let reader = BufReader::new(File::open(filename)
+        .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", filename.display()))
+    );
+    
+    let mut lines: Vec<String> = vec![];
+    for line in reader.lines() {
+        lines.push(line.unwrap())
+    }
+    lines
+}
+
+fn get_coloring_input_for_file_mode(file_of_files_path: &Path, labels_path: Option<&PathBuf>, hierarchy_path: &Option<PathBuf>, add_rev_comps: bool) -> (ColorHierarchy, Vec<LazyFileSeqStream>){
+    let input_paths: Vec<PathBuf> = read_all_lines(file_of_files_path).into_iter().map(|f| PathBuf::from(f)).collect();
+
+    // Read labels from file, or use filenames as default
+    let labels: Vec<String> = if let Some(ref names_path) = labels_path {
+        let names = read_all_lines(names_path);
+        if names.len() != input_paths.len() {
+            panic!("Label names file has {} names but there are {} input files", names.len(), input_paths.len());
+        }
+        names
+    } else {
+        // Use file paths as default labels
+        read_all_lines(file_of_files_path)
+    };
+    let hierarchy = build_hierarchy(&hierarchy_path, labels);
+    let individual_streams: Vec<LazyFileSeqStream> = input_paths.iter()
+        .map(|p| LazyFileSeqStream::new(p.clone(), add_rev_comps))
+        .collect();
+
+    (hierarchy, individual_streams)
+}
+
+fn get_coloring_input_for_sequence_mode(seq_file: &Path, labels_path: Option<&PathBuf>, hierarchy_path: &Option<PathBuf>, add_rev_comps: bool) -> (ColorHierarchy, Vec<SingleSeqStream>) {
+    // Read labels from file, or use sequence names as default
+    let labels: Vec<String> = if let Some(ref names_path) = labels_path {
+        log::info!("Reading label names from {}", names_path.display());
+        read_all_lines(names_path)
+    } else {
+        log::info!("Reading sequence names from {}", seq_file.display());
+        let mut pre_reader = DynamicFastXReader::from_file(&seq_file)
+            .unwrap_or_else(|e| panic!("Could not open sequence file {}: {e}", seq_file.display()));
+        let mut names = Vec::<String>::new();
+        while let Some(rec) = pre_reader.read_next().unwrap() {
+            names.push(String::from_utf8(rec.name().to_vec()).unwrap());
+        }
+        names
+    };
+
+    let n_labels = labels.len();
+    let hierarchy = build_hierarchy(&hierarchy_path, labels);
+
+    let shared_reader = Arc::new(Mutex::new(
+        DynamicFastXReader::from_file(&seq_file)
+            .unwrap_or_else(|e| panic!("Could not open sequence file {}: {e}", seq_file.display()))
+    ));
+    let individual_streams: Vec<io::SingleSeqStream> = (0..n_labels)
+        .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
+        .collect();
+
+    (hierarchy, individual_streams)
+
 }
 
 fn main() {
 
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info")
+        // This is now unsafe since Rust 2024. Apparently
+        // it's a flaw in Unix itself and cannot be called safely.
+        unsafe { std::env::set_var("RUST_LOG", "info") }
     }
     env_logger::init();
 
@@ -417,7 +525,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { file_colors, sequence_colors, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, color_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -426,115 +534,30 @@ fn main() {
 
             let add_rev_comps = !forward_only;
 
-            // Determine SBWT input paths (all sequences together for k-mer set building)
-            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref fc) = file_colors {
-                BufReader::new(File::open(fc)
-                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
-                    .lines().map(|l| PathBuf::from(l.unwrap())).collect()
+            // Determine SBWT inputs (all sequences together for k-mer set building)
+            let sbwt_input_stream = if let Some(unitigs_path) = unitigs_path {
+                io::ChainedInputStream::new(vec![unitigs_path.clone()])
             } else {
-                vec![sequence_colors.as_ref().unwrap().clone()]
+                let sbwt_input_paths: Vec<PathBuf> = if let Some(ref lbf) = label_by_file {
+                    read_all_lines(lbf).into_iter().map(|line| PathBuf::from(line)).collect()
+                } else {
+                    vec![label_by_seq.as_ref().unwrap().clone()]
+                };
+                io::ChainedInputStream::new(sbwt_input_paths)
             };
+            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream , n_threads, add_rev_comps, s);
 
-            let (sbwt, lcs) = if let Some(sbwt_path) = sbwt_path {
-                let mut input = BufReader::new(File::open(&sbwt_path)
-                    .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
-                let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
-                log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
-                let lcs = if let Some(lcs_path) = lcs_path {
-                    LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
-                        .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
-                } else {
-                    LcsArray::from_sbwt(&sbwt, n_threads)
-                };
-                if sbwt.k() != s {
-                    panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
-                }
-                (sbwt, lcs)
-            } else {
-                let all_input_seqs = if let Some(unitigs_path) = unitigs_path {
-                    io::ChainedInputStream::new(vec![unitigs_path.clone()])
-                } else {
-                    io::ChainedInputStream::new(sbwt_input_paths)
-                };
-                let (sbwt, lcs) = if let Some(td) = temp_dir {
-                    // Use disk-based construction
-                    sbwt::SbwtIndexBuilder::new()
-                        .add_rev_comp(add_rev_comps)
-                        .k(s)
-                        .build_lcs(true)
-                        .n_threads(n_threads)
-                        .precalc_length(8)
-                        .add_all_dummy_paths(true) // This is required for multi-k support
-                        .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
-                    .run(all_input_seqs)
-                } else {
-                    // Use in-memory construction
-                    sbwt::SbwtIndexBuilder::new()
-                        .add_rev_comp(add_rev_comps)
-                        .k(s)
-                        .build_lcs(true)
-                        .n_threads(n_threads)
-                        .precalc_length(8)
-                        .add_all_dummy_paths(true) // This is required for multi-k support
-                        .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
-                    .run(all_input_seqs)
-                };
-                let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
-                (sbwt, lcs)
-            };
-
-            if let Some(fc) = file_colors {
-                let input_paths: Vec<PathBuf> = BufReader::new(File::open(&fc)
-                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", fc.display())))
-                    .lines().map(|l| PathBuf::from(l.unwrap())).collect();
-                let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
-                    let names = read_color_names_file(names_path);
-                    if names.len() != input_paths.len() {
-                        panic!("Color names file has {} names but there are {} input files", names.len(), input_paths.len());
-                    }
-                    names
-                } else {
-                    input_paths.iter().map(|p| p.as_os_str().to_str().unwrap().to_owned()).collect()
-                };
-                let hierarchy = build_hierarchy(&hierarchy_path, color_names);
-                let individual_streams: Vec<LazyFileSeqStream> = input_paths.iter()
-                    .map(|p| LazyFileSeqStream::new(p.clone(), add_rev_comps))
-                    .collect();
+            if let Some(fof) = label_by_file {
+                let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
-                let sc = sequence_colors.unwrap();
-
-                let color_names: Vec<String> = if let Some(ref names_path) = color_names_file {
-                    log::info!("Reading color names from {}", names_path.display());
-                    read_color_names_file(names_path)
-                } else {
-                    log::info!("Reading sequence names from {}", sc.display());
-                    let mut pre_reader = DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-colors file {}: {e}", sc.display()));
-                    let mut names = Vec::<String>::new();
-                    while let Some(rec) = pre_reader.read_next().unwrap() {
-                        names.push(String::from_utf8(rec.name().to_vec()).unwrap());
-                    }
-                    names
-                };
-
-                let n_colors = color_names.len();
-                let hierarchy = build_hierarchy(&hierarchy_path, color_names);
-
-                let shared_reader = Arc::new(Mutex::new(
-                    DynamicFastXReader::from_file(&sc)
-                        .unwrap_or_else(|e| panic!("Could not open sequence-colors file {}: {e}", sc.display()))
-                ));
-                let individual_streams: Vec<io::SingleSeqStream> = (0..n_colors)
-                    .map(|_| io::SingleSeqStream::new(Arc::clone(&shared_reader), add_rev_comps))
-                    .collect();
-
+                let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             }
 
         },
 
-        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_color_names, report_query_names, report_misses, no_header, batch_size} => {
+        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_label_ids, report_query_names, report_misses, no_header, batch_size} => {
 
             let (n_threads, batch_size) = (n_threads as usize, batch_size as usize);
             
@@ -551,14 +574,14 @@ fn main() {
                 panic!("Error: query k = {} larger than indexing s = {}", k, index.k());
             }
 
-            let color_names = report_color_names.then(|| index.color_names().to_vec());
-            let seq_names = report_query_names.then(|| load_seq_names(&query_path));
+            let color_names = if report_label_ids { None } else { Some(index.color_names().to_vec())};
+            let seq_names = if report_query_names { Some(load_seq_names(&query_path)) } else { None };
 
             let reader = DynamicFastXReader::from_file(&query_path)
                 .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
 
             let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
-            let writer = OutputWriter::new(stdout, seq_names, color_names, index.root_id(), report_misses, !no_header);
+            let writer = OutputWriter::new(stdout, seq_names, color_names, report_misses, !no_header);
 
             log::info!("Running queries from {} ...", query_path.display());
             run_queries(n_threads, reader, index, batch_size, k, writer);
@@ -572,15 +595,15 @@ fn main() {
             let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
-            println!("Number of colors in hierarchy:      {}", index.n_colors_in_hierarchy());
+            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy());
             println!("Number of k-mers:      {}", index.n_kmers());
-            println!("Colored SBWT positions: {}", stats.colored);
-            println!("Uncolored SBWT positions:  {}", stats.uncolored);
-            println!("Color run min length:  {}", stats.color_run_min);
-            println!("Color run max length:  {}", stats.color_run_max);
-            println!("Color run mean length: {:.2}", stats.color_run_mean);
+            println!("Labeled SBWT positions: {}", stats.colored);
+            println!("Unlabeled SBWT positions:  {}", stats.uncolored);
+            println!("Label run min length:  {}", stats.color_run_min);
+            println!("Label run max length:  {}", stats.color_run_max);
+            println!("Label run mean length: {:.2}", stats.color_run_mean);
             println!();
-            println!("{:<10}  {}", "Count", "Color name");
+            println!("{:<10}  {}", "Count", "Label name");
             println!("{:<10}  {}", stats.uncolored, "none");
             for (id, name) in index.color_names().iter().enumerate() {
                 println!("{:<10}  {}", stats.color_counts[id], name);
@@ -592,6 +615,24 @@ fn main() {
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
             compute_node_stats(index, report_color_names, n_threads);
+        },
+
+        Subcommands::PrintHierarchy { index: index_path } => {
+            let mut index_input = BufReader::new(File::open(&index_path)
+                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+            let index = ColorIndex::load(&mut index_input);
+            let names = index.color_names();
+            let tree = index.color_hierarchy();
+            let n = tree.n_nodes();
+            println!("{}", n);
+            for name in names {
+                println!("{}", name);
+            }
+            for node in 0..n {
+                if node != tree.root() {
+                    println!("{} {}", names[node], names[tree.parent(node)]);
+                }
+            }
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path} => {

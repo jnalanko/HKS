@@ -1,7 +1,6 @@
-2 4
-clade1
-root
-example/A.fasta clade1
-example/B.fasta clade1
-clade1 root
-example/C.fasta root
+example/A.fna clade1
+example/B.fna clade1
+clade1 clade2
+example/C.fna clade2
+clade2 root
+example/D.fna root

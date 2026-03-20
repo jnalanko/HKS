@@ -2,7 +2,7 @@ use std::{io::{Read, Write}, ops::Range};
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
 use std::sync::atomic::Ordering::Relaxed;
 
-use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, single_colored_kmers::{KmerLookupIterator, SingleColoredKmers}};
+use crate::lca_tree::LcaTree;
 
 pub trait ColoredKmerLookupAlgorithm {
     fn lookup_kmers(&self, query: &[u8], k: usize) -> impl Iterator<Item = Option<usize>>;

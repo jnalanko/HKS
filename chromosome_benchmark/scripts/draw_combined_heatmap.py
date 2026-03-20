@@ -74,7 +74,7 @@ def main():
     args = parser.parse_args()
 
     hks_class_map, query_name_map = load_hks_maps()
-    kraken_class_map = load_kraken_taxid_map("feature_tree/kraken_names.dmp")
+    kraken_class_map = load_kraken_taxid_map()
 
     hks_cols, hks_rows, hks_mat = translate(
         args.hks_tsv, hks_class_map, query_name_map, kraken_mode=False)

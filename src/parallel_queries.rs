@@ -1,6 +1,6 @@
 use std::{cmp::{max, Reverse}, io::Write, ops::Range};
 use jseqio::seq_db::SeqDB;
-use crate::{color_storage::SimpleColorStorage, single_colored_kmers::{ColorHierarchy, SingleColoredKmers}};
+
 use crate::traits::*;
 
 pub trait RunWriter: Send {
@@ -19,14 +19,13 @@ pub struct OutputWriter<W: Write> {
     out: W,
     seq_names: Option<Vec<String>>,
     color_names: Option<Vec<String>>,
-    root_id: usize,
     report_misses: bool,
     print_header: bool,
 }
 
 impl<W: Write> OutputWriter<W> {
-    pub fn new(out: W, seq_names: Option<Vec<String>>, color_names: Option<Vec<String>>, root_id: usize, report_misses: bool, print_header: bool) -> Self {
-        Self { out, seq_names, color_names, root_id, report_misses, print_header }
+    pub fn new(out: W, seq_names: Option<Vec<String>>, color_names: Option<Vec<String>>, report_misses: bool, print_header: bool) -> Self {
+        Self { out, seq_names, color_names, report_misses, print_header }
     }
 
     #[cfg(test)]
@@ -39,7 +38,7 @@ impl<W: Write + Send> RunWriter for OutputWriter<W> {
     fn write_header(&mut self) {
         if self.print_header {
             let seq_col = if self.seq_names.is_some() { "query_name" } else { "query_rank" };
-            let color_col = if self.color_names.is_some() { "color_name" } else { "color" };
+            let color_col = if self.color_names.is_some() { "label_name" } else { "label" };
             writeln!(self.out, "{seq_col}\tfrom_kmer\tto_kmer\t{color_col}").unwrap();
         }
     }
@@ -481,7 +480,7 @@ mod tests {
 
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
-        let mut writer = OutputWriter::new(out, None, None, sck.color_hierarchy().root(), false, true);
+        let mut writer = OutputWriter::new(out, None, None, false, true);
         lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck, batch_size, k, &mut writer);
 
         // Parse output tsv line by line
@@ -491,7 +490,7 @@ mod tests {
         let mut found_kmers: Vec::<Vec::<(usize,Color)>> = vec![Vec::new(); queries.len()]; 
         for (line_idx, line) in output_lines.enumerate() {
             if line_idx == 0 { // tsv header
-                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tcolor");
+                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tlabel");
             } else {
                 let mut fields = line.split('\t');
                 let seq_id: usize = fields.next().unwrap().parse().unwrap();
@@ -595,7 +594,7 @@ mod tests {
 
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
-        let mut writer = OutputWriter::new(out, None, None, sck.color_hierarchy().root(), false, true);
+        let mut writer = OutputWriter::new(out, None, None, false, true);
         lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck, batch_size, query_k, &mut writer);
 
         let output_str = String::from_utf8(writer.into_inner().into_inner()).unwrap();
@@ -603,7 +602,7 @@ mod tests {
         let mut found_kmers: Vec<Vec<(usize, Color)>> = vec![Vec::new(); queries.len()];
         for (line_idx, line) in output_lines.enumerate() {
             if line_idx == 0 {
-                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tcolor");
+                assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tlabel");
             } else {
                 let mut fields = line.split('\t');
                 let seq_id: usize = fields.next().unwrap().parse().unwrap();

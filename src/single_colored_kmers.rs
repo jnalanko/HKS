@@ -27,7 +27,7 @@ impl ColorHierarchy {
     /// of a new root node named "root". No leaf name may be "root".
     pub fn new_star(leaf_names: Vec<String>) -> Self {
         for name in &leaf_names {
-            assert!(name != "root", "color name 'root' is reserved");
+            assert!(name != "root", "label name 'root' is reserved");
         }
         let mut names = leaf_names;
         names.push("root".to_string());
@@ -38,11 +38,9 @@ impl ColorHierarchy {
     }
 
     /// Constructs a hierarchy from a pre-built `LcaTree` and the names of all nodes.
-    /// `names[i]` is the name of node `i` (leaves first, then internal nodes).
-    /// `names.len()` must equal `tree.n_nodes()`.
-    pub fn with_tree(tree: LcaTree, names: Vec<String>) -> Self {
-        assert_eq!(names.len(), tree.n_nodes(), "names must have one entry per tree node");
-        Self { tree, names }
+    pub fn with_tree(tree: LcaTree, node_names: Vec<String>) -> Self {
+        assert_eq!(node_names.len(), tree.n_nodes(), "names must have one entry per tree node");
+        Self { tree, names: node_names }
     }
 
     pub fn tree(&self) -> &LcaTree {
@@ -785,7 +783,7 @@ mod tests {
             .run(sbwt::SliceSeqStream::new(&slices));
         let lcs = lcs.unwrap();
 
-        let color_names = (0..seqs.len()).map(|i| format!("color{i}")).collect();
+        let color_names = (0..seqs.len()).map(|i| format!("label{i}")).collect();
         let hierarchy = ColorHierarchy::new_star(color_names);
 
         let streams: Vec<sbwt::VecSeqStream> = seqs.iter()

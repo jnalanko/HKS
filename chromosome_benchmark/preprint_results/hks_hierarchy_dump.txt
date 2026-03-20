@@ -1,0 +1,62 @@
+31
+chr1
+chr2
+chr3
+chr4
+chr5
+chr6
+chr7
+chr8
+chr9
+chr10
+chr11
+chr12
+chr13
+chr14
+chr15
+chr16
+chr17
+chr18
+chr19
+chr20
+chr21
+chr22
+chrX
+chrY
+chrM
+root
+autosome_multigroup1
+sex_multigroup1
+acrocentric_multigroup1
+metacentric_multigroup1
+submetacentric_multigroup1
+chr1 metacentric_multigroup1
+chr2 submetacentric_multigroup1
+chr3 metacentric_multigroup1
+chr4 submetacentric_multigroup1
+chr5 submetacentric_multigroup1
+chr6 submetacentric_multigroup1
+chr7 submetacentric_multigroup1
+chr8 submetacentric_multigroup1
+chr9 submetacentric_multigroup1
+chr10 submetacentric_multigroup1
+chr11 submetacentric_multigroup1
+chr12 submetacentric_multigroup1
+chr13 acrocentric_multigroup1
+chr14 acrocentric_multigroup1
+chr15 acrocentric_multigroup1
+chr16 metacentric_multigroup1
+chr17 submetacentric_multigroup1
+chr18 submetacentric_multigroup1
+chr19 metacentric_multigroup1
+chr20 metacentric_multigroup1
+chr21 acrocentric_multigroup1
+chr22 acrocentric_multigroup1
+chrX sex_multigroup1
+chrY sex_multigroup1
+chrM root
+autosome_multigroup1 root
+sex_multigroup1 root
+acrocentric_multigroup1 autosome_multigroup1
+metacentric_multigroup1 autosome_multigroup1
+submetacentric_multigroup1 autosome_multigroup1

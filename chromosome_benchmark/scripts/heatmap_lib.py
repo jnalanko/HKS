@@ -2,9 +2,9 @@
 
 import numpy as np
 
-NAMES_FILE       = "feature_tree/chromosome_names.txt"
-TREE_FILE        = "feature_tree/chromosome_tree.txt"
-QUERY_NAMES_FILE = "query/names.txt"
+HKS_HIERARCHY_FILE = "preprint_results/hks_hierarchy_dump.txt"
+QUERY_NAMES_FILE   = "preprint_results/query_names.txt"
+KRAKEN_NAMES_FILE  = "preprint_results/kraken_names.dmp"
 
 # Fixed display order for classification labels (y-axis), top to bottom.
 # invert_yaxis() is used, so ordered_rows is stored bottom-to-top (reversed).
@@ -36,26 +36,15 @@ COL_ORDER = [
 
 
 def load_hks_maps():
-    """Return (class_taxid_to_name, query_taxid_to_name) for the HKS 0-indexed scheme."""
-    chrom_names = []
-    with open(NAMES_FILE) as f:
-        for line in f:
-            name = line.strip()
-            if name:
-                chrom_names.append(name)
+    """Return (class_taxid_to_name, query_taxid_to_name) for the HKS 0-indexed scheme.
 
-    internal_nodes = []
-    with open(TREE_FILE) as f:
+    Reads HKS_HIERARCHY_FILE, which is a dump from --print-hierarchy: the first
+    line is the number of nodes, followed by one label name per line in id order.
+    """
+    with open(HKS_HIERARCHY_FILE) as f:
         lines = [l.strip() for l in f if l.strip()]
-    n_internal = int(lines[0].split()[0])
-    for i in range(1, 1 + n_internal):
-        internal_nodes.append(lines[i])
-
-    class_taxid_to_name = {}
-    for i, name in enumerate(chrom_names):
-        class_taxid_to_name[str(i)] = name
-    for i, name in enumerate(internal_nodes):
-        class_taxid_to_name[str(len(chrom_names) + i)] = name
+    n = int(lines[0])
+    class_taxid_to_name = {str(i): lines[1 + i] for i in range(n)}
 
     query_names = []
     with open(QUERY_NAMES_FILE) as f:
@@ -68,9 +57,9 @@ def load_hks_maps():
     return class_taxid_to_name, query_taxid_to_name
 
 
-def load_kraken_taxid_map(names_file):
+def load_kraken_taxid_map():
     taxid_to_name = {}
-    with open(names_file) as f:
+    with open(KRAKEN_NAMES_FILE) as f:
         for line in f:
             parts = line.split("\t|\t")
             taxid = parts[0].strip()
