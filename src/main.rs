@@ -97,6 +97,12 @@ impl ColorIndex {
         }
     }
 
+    fn color_hierarchy(&self) -> &crate::lca_tree::LcaTree {
+        match self {
+            ColorIndex::FixedK(index) => index.color_hierarchy(),
+        }
+    }
+
     fn n_kmers(&self) -> usize {
         match self {
             ColorIndex::FixedK(index) => index.n_kmers(),
@@ -280,7 +286,7 @@ pub enum Subcommands {
         #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
         batch_size: u64,
 
-        #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --dump-labels to obtain a table to translate ids to names.", long = "report-label-ids", help_heading = "Advanced")]
+        #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.", long = "report-label-ids", help_heading = "Advanced")]
         report_label_ids: bool,
 
     },
@@ -301,6 +307,12 @@ pub enum Subcommands {
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
+    },
+
+    #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line, then all edges as space-separated child parent pairs one per line.")]
+    PrintHierarchy {
+        #[arg(help = "Path to the index file", short, long, required = true)]
+        index: PathBuf,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -603,6 +615,24 @@ fn main() {
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
             compute_node_stats(index, report_color_names, n_threads);
+        },
+
+        Subcommands::PrintHierarchy { index: index_path } => {
+            let mut index_input = BufReader::new(File::open(&index_path)
+                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+            let index = ColorIndex::load(&mut index_input);
+            let names = index.color_names();
+            let tree = index.color_hierarchy();
+            let n = tree.n_nodes();
+            println!("{}", n);
+            for name in names {
+                println!("{}", name);
+            }
+            for node in 0..n {
+                if node != tree.root() {
+                    println!("{} {}", names[node], names[tree.parent(node)]);
+                }
+            }
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path} => {
