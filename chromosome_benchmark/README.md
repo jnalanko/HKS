@@ -80,6 +80,7 @@ zcat query/hg002v1.1.fasta.gz | awk '/^>/{n++; if(n>2) exit} n' > query/hg002v1.
 python3 scripts/print_parallel_speedup_commands.py | bash
 
 # Plots
+hks print-hierarchy --index index/CHM13-s63.hks > feature_tree/hks_hierarchy_dump.txt
 python3 scripts/draw_combined_heatmap.py
 python3 scripts/plot_parallel_speedup.py
 python3 scripts/draw_combined_heatmap.py preprint_results/heatmap_data/heatmap-k63-hks.tsv preprint_results/heatmap_data/heatmap-k63-m31-kraken.tsv plots/heatmap-combined.pdf

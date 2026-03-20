@@ -2,7 +2,7 @@
 
 import numpy as np
 
-HKS_HIERARCHY_FILE = "feature_tree/hks_hierarchy.txt"
+HKS_HIERARCHY_FILE = "feature_tree/hks_hierarchy_dump.txt"
 QUERY_NAMES_FILE   = "query/names.txt"
 
 # Fixed display order for classification labels (y-axis), top to bottom.
