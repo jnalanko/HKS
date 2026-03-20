@@ -7,7 +7,7 @@ HKS is a variable-length k-mer index with hierarchical labels. The input consist
 
 The index is built for a maximum s-mer length s, and allows queries for *any* k-mer length up to s. The query takes a sequence, and prints a file in bed-format annotating each input k-mer with the lowest common ancestor of the labels of that k-mer in the hierarchy.
 
-Preprint available on [https://www.biorxiv.org/content/10.64898/2026.03.15.711907v1](bioRxiv). Note that this repository uses simplified terminology compared to the manuscript. Instead of the terms of "category" and "feature", this repository uses just "label" for all nodes in the label hierarchy. The next version of the manuscript will be updated to match the terminology in this repository.
+Preprint available on [bioRXiv](https://www.biorxiv.org/content/10.64898/2026.03.15.711907v1). Note that this repository uses simplified terminology compared to the manuscript. Instead of the terms of "category" and "feature", this repository uses just "label" for all nodes in the label hierarchy. The next version of the manuscript will be updated to match the terminology in this repository.
 
 ## Installation
 
