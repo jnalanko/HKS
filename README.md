@@ -70,8 +70,12 @@ Input:
       --hierarchy <HIERARCHY>          Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named "root").
 
 Advanced use:
-  -b, --sbwt-path <SBWT_PATH>  Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
-  -l, --lcs-path <LCS_PATH>    Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
+      --load-sbwt <SBWT_PATH>
+          Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
+      --load-lcs <LCS_PATH>
+          Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
+      --save-sbwt-and-lcs <SBWT_AND_LCS_SAVE_PREFIX>
+          Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).
 ```
 
 ### Query k-mers

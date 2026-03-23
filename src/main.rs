@@ -4,7 +4,7 @@ use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Re
 use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
-use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SubsetMatrix};
+use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SbwtIndexVariant, SubsetMatrix, write_sbwt_index_variant};
 use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
 use parallel_queries::OutputWriter;
 
@@ -241,10 +241,10 @@ pub enum Subcommands {
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
         n_threads: u64,
 
-        #[arg(help = "Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths", short = 'b', long, help_heading = "Advanced use")]
+        #[arg(help = "Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths", long = "load-sbwt", help_heading = "Advanced use")]
         sbwt_path: Option<PathBuf>,
 
-        #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", short, long, help_heading = "Advanced use")]
+        #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", long = "load-lcs", help_heading = "Advanced use")]
         lcs_path: Option<PathBuf>,
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
@@ -257,6 +257,9 @@ pub enum Subcommands {
 
         #[arg(help = "Hidden option: After building, turn all \"none\" labels into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
         none_to_multiple: bool,
+
+        #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
+        sbwt_and_lcs_save_prefix: Option<PathBuf>,
 
     },
 
@@ -401,6 +404,25 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
 }
 
 // Load SBWT and LCS, or build from scratch if not given
+fn save_sbwt_and_lcs_if_requested(sbwt: &SbwtIndexVariant, lcs: &LcsArray, prefix: &Option<PathBuf>) {
+    
+    if let Some(prefix) = prefix {
+        let sbwt_out_path = PathBuf::from({ let mut s = prefix.as_os_str().to_os_string(); s.push(".sbwt"); s });
+        let lcs_out_path = PathBuf::from({ let mut s = prefix.as_os_str().to_os_string(); s.push(".lcs"); s });
+        if let Some(parent) = sbwt_out_path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        log::info!("Saving SBWT to {}", sbwt_out_path.display());
+        let mut sbwt_out = BufWriter::new(File::create(&sbwt_out_path)
+            .unwrap_or_else(|e| panic!("Could not create SBWT file {}: {e}", sbwt_out_path.display())));
+        write_sbwt_index_variant(sbwt, &mut sbwt_out).unwrap();
+        log::info!("Saving LCS to {}", lcs_out_path.display());
+        let mut lcs_out = BufWriter::new(File::create(&lcs_out_path)
+            .unwrap_or_else(|e| panic!("Could not create LCS file {}: {e}", lcs_out_path.display())));
+        lcs.serialize(&mut lcs_out).unwrap();
+    }
+}
+
 fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_dir: Option<PathBuf>, all_input_seqs: io::ChainedInputStream, n_threads: usize, add_rev_comps: bool, s: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
     if let Some(sbwt_path) = sbwt_path {
         let mut input = BufReader::new(File::open(&sbwt_path)
@@ -525,7 +547,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, none_to_multiple} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, none_to_multiple, sbwt_and_lcs_save_prefix} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -546,14 +568,21 @@ fn main() {
                 io::ChainedInputStream::new(sbwt_input_paths)
             };
             if let Some(fof) = label_by_file {
+                // TODO: most of this code is duplicated in the else-branch. Refactor to extract the shared logic.
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
+                let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
+                save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
+                let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
+                let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
+                save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
+                let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             }
 
