@@ -545,13 +545,15 @@ fn main() {
                 };
                 io::ChainedInputStream::new(sbwt_input_paths)
             };
-            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream , n_threads, add_rev_comps, s);
-
             if let Some(fof) = label_by_file {
+                // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             } else {
+                // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
                 add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
             }
 
