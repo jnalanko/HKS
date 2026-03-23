@@ -15,8 +15,7 @@ pub struct LcaTree {
 
 impl LcaTree {
     /// Construct a tree from `n` nodes and `edges`, where each edge `(child, parent)`
-    /// points toward the root. Leaves must have IDs 0..num_leaves and internal nodes
-    /// must have IDs num_leaves..n. Returns an error if these conditions are not met or
+    /// points toward the root. Returns an error if these conditions are not met or
     /// if the edges do not form a valid tree.
     pub fn new(n: usize, edges: Vec<(usize, usize)>) -> Result<Self, String> {
         if n == 0 {
@@ -57,18 +56,6 @@ impl LcaTree {
             .find(|&i| parent[i] == usize::MAX)
             .ok_or_else(|| "No root found (cycle involving all nodes)".to_string())?;
         parent[root] = root;
-
-        // Validate leaf/internal node ordering: leaves (empty children) must have IDs
-        // 0..num_leaves, internal nodes (non-empty children) must have IDs num_leaves..n.
-        let num_leaves = children.iter().take_while(|c| c.is_empty()).count();
-        for i in num_leaves..n {
-            if children[i].is_empty() {
-                return Err(format!(
-                    "Node {i} is a leaf but has ID >= {num_leaves}: \
-                     leaves must occupy IDs 0..{num_leaves}"
-                ));
-            }
-        }
 
         // BFS from root to compute depths and verify connectivity.
         let mut depth = vec![usize::MAX; n];
@@ -323,16 +310,6 @@ mod tests {
         // Nodes 1,2,3 form a cycle; node 0 is isolated (becomes "root" but unreachable from it)
         let err = LcaTree::new(4, vec![(1, 2), (2, 3), (3, 1)]).unwrap_err();
         assert!(err.contains("disconnected"), "{err}");
-    }
-
-    #[test]
-    fn error_wrong_leaf_internal_order() {
-        // Tree is valid structurally, but internal node 0 has a smaller ID than leaf 1.
-        //   0 (internal, root)
-        //  / \
-        // 1   2  <- leaves, but IDs 1,2 are >= internal ID 0: violation
-        let err = LcaTree::new(3, vec![(1, 0), (2, 0)]).unwrap_err();
-        assert!(err.contains("leaf") || err.contains("internal"), "{err}");
     }
 
     #[test]
