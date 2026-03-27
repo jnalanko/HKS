@@ -93,8 +93,11 @@ pub fn serialize_bitvec_u64(bv: &BitVec::<u64, Lsb0>, mut out: impl Write) {
     let type_id = b"bitvec::order::Lsb0";
     bincode::serialize_into(&mut out, &type_id.len()).unwrap();
     out.write_all(type_id).unwrap();
-    let word_size: u16 = 64;
+    let word_size: u8 = 64;
     bincode::serialize_into(&mut out, &word_size).unwrap();
+    let what_is_this: u8 = 0; // I don't know what this byte does, but it's there in the bincode format.
+    bincode::serialize_into(&mut out, &what_is_this).unwrap();
+
     let n_real_bits = bv.len();
 
     bincode::serialize_into(&mut out, &n_real_bits).unwrap();
@@ -112,8 +115,10 @@ pub fn load_bitvec_u64(mut input: impl Read) -> BitVec::<u64, Lsb0> {
     let type_id_str = std::str::from_utf8(&type_id_bytes).unwrap();
     assert_eq!(type_id_str, "bitvec::order::Lsb0");
 
-    let word_size: u16 = bincode::deserialize_from(&mut input).unwrap();
+    let word_size: u8 = bincode::deserialize_from(&mut input).unwrap();
     assert_eq!(word_size, 64);
+    let what_is_this: u8 = bincode::deserialize_from(&mut input).unwrap();
+    assert_eq!(what_is_this, 0); // I don't know what this is, but it's zero in the bincode format
 
     let n_real_bits: usize = bincode::deserialize_from(&mut input).unwrap();
     let n_words: usize = bincode::deserialize_from(&mut input).unwrap();
