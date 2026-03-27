@@ -305,8 +305,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Print label names instead of label ids", long = "report-label-names")]
-        report_color_names: bool,
+        #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
+        report_color_ids: bool,
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
@@ -641,11 +641,11 @@ fn main() {
             }
         },
 
-        Subcommands::NodeStats { index: index_path, report_color_names, n_threads } => {
+        Subcommands::NodeStats { index: index_path, report_color_ids, n_threads } => {
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
-            compute_node_stats(index, report_color_names, n_threads);
+            compute_node_stats(index, !report_color_ids, n_threads);
         },
 
         Subcommands::PrintHierarchy { index: index_path } => {

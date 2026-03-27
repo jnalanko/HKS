@@ -355,7 +355,7 @@ fn node_stats_report_label_names() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(&index)
-        .args(["--report-label-names"])
+        .args(["--report-label-ids"])
         .status()
         .unwrap();
     assert!(status.success());
