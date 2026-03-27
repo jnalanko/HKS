@@ -92,16 +92,17 @@ pub fn serialize_bitvec_u64(bv: &BitVec::<u64, Lsb0>, mut out: impl Write) {
     // Serialize using the same format as used by serde + bincode
     let type_id = b"bitvec::order::Lsb0";
     bincode::serialize_into(&mut out, &type_id.len()).unwrap();
-    bincode::serialize_into(&mut out, &type_id).unwrap();
+    out.write_all(type_id).unwrap();
     let word_size: u16 = 64;
     bincode::serialize_into(&mut out, &word_size).unwrap();
     let n_real_bits = bv.len();
+
     bincode::serialize_into(&mut out, &n_real_bits).unwrap();
     let n_words = n_real_bits.div_ceil(word_size as usize);
     bincode::serialize_into(&mut out, &n_words).unwrap();
-
     let words = bv.as_raw_slice();
-    bincode::serialize_into(&mut out, words).unwrap();
+    let words_as_bytes: &[u8] = bytemuck::cast_slice(words);
+    out.write_all(words_as_bytes).unwrap();
 }
 
 pub fn load_bitvec_u64(mut input: impl Read) -> BitVec::<u64, Lsb0> {
