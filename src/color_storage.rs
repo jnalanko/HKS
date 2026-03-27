@@ -29,13 +29,20 @@ impl MySerialize for SimpleColorStorage {
     fn serialize(&self, mut out: &mut impl Write) {
         bincode::serialize_into(&mut out, &self.n_colors).unwrap();
         bincode::serialize_into(&mut out, &self.bits_per_color).unwrap();
-        bincode::serialize_into(&mut out, &self.colors).unwrap();
+
+        // Use our own serialization for this because the bincode deserializer
+        // uses a doubling buffer which can have 2x overhead.
+        crate::util::serialize_bitvec_u64(&self.colors, &mut out);
     }
 
     fn load(mut input: &mut impl Read) -> Box<Self> {
         let n_colors: usize = bincode::deserialize_from(&mut input).unwrap();
         let bits_per_color: usize = bincode::deserialize_from(&mut input).unwrap();
-        let colors: BitVec<u64, Lsb0> = bincode::deserialize_from(&mut input).unwrap();
+
+        // Use our own deserialization for this because the bincode deserializer
+        // uses a doubling buffer which can have 2x overhead.
+        let colors: BitVec<u64, Lsb0> = crate::util::load_bitvec_u64(&mut input);
+
         Box::new(SimpleColorStorage { n_colors, colors, bits_per_color })
     }
 }
