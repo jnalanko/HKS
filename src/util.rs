@@ -1,4 +1,5 @@
-use std::ops::Range;
+use std::{io::{Read, Write}, ops::Range};
+use bitvec::prelude::*;
 
 // Splits `seq` into pieces of length at most `max_piece_len`, such that the pieces overlap
 // by k-1 characters. Calls f on pairs (piece_idx, piece). 
@@ -85,4 +86,77 @@ pub(crate) fn split_to_mut_regions<'a>(
     }
 
     result
+}
+
+pub fn serialize_bitvec_u64(bv: &BitVec::<u64, Lsb0>, mut out: impl Write) {
+    // Serialize using the same format as used by serde + bincode
+    let type_id = b"bitvec::order::Lsb0";
+    bincode::serialize_into(&mut out, &type_id.len()).unwrap();
+    bincode::serialize_into(&mut out, &type_id).unwrap();
+    let word_size: u16 = 64;
+    bincode::serialize_into(&mut out, &word_size).unwrap();
+    let n_real_bits = bv.len();
+    bincode::serialize_into(&mut out, &n_real_bits).unwrap();
+    let n_words = n_real_bits.div_ceil(word_size as usize);
+    bincode::serialize_into(&mut out, &n_words).unwrap();
+
+    let words = bv.as_raw_slice();
+    bincode::serialize_into(&mut out, words).unwrap();
+}
+
+pub fn load_bitvec_u64(mut input: impl Read) -> BitVec::<u64, Lsb0> {
+    let type_id_len: u64 = bincode::deserialize_from(&mut input).unwrap();
+    let mut type_id_bytes = vec![0u8; type_id_len as usize];
+    input.read_exact(&mut type_id_bytes).unwrap();
+    let type_id_str = std::str::from_utf8(&type_id_bytes).unwrap();
+    assert_eq!(type_id_str, "bitvec::order::Lsb0");
+
+    let word_size: u16 = bincode::deserialize_from(&mut input).unwrap();
+    assert_eq!(word_size, 64);
+
+    let n_real_bits: usize = bincode::deserialize_from(&mut input).unwrap();
+    let n_words: usize = bincode::deserialize_from(&mut input).unwrap();
+
+    // Deserialize words
+    let mut words = vec![0u64; n_words];
+    let words_as_bytes = bytemuck::cast_slice_mut(&mut words);
+    input.read_exact(words_as_bytes).unwrap();
+
+    let mut bv = BitVec::<u64, Lsb0>::from_vec(words);
+    bv.truncate(n_real_bits); 
+
+    bv
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use rand::{SeedableRng, Rng};
+
+    #[test]
+    fn bitvec_custom_serialize_and_store() {
+        // Check that our custom serialize and load match for the serde + bincode implementation.
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let n_bits = 1100;
+        let bv: BitVec::<u64, Lsb0> = (0..n_bits).map(|_| rng.gen_bool(0.5)).collect();
+
+        // Round trip with our functions
+        let mut serialized = Vec::new();
+        serialize_bitvec_u64(&bv, &mut serialized);
+        // Print the serialized data as hex for debugging
+        for byte in &serialized {
+            eprint!("{:02x} ", byte);
+        }
+        eprintln!();
+
+        let deserialized = load_bitvec_u64(&serialized[..]);
+        assert_eq!(bv, deserialized);
+
+        // Check that the custom serialize format matches the serde + bincode format.
+        let mut bincode_serialized = Vec::new();
+        bincode::serialize_into(&mut bincode_serialized, &bv).unwrap();
+        assert_eq!(serialized, bincode_serialized);
+        
+    }
 }
