@@ -462,6 +462,7 @@ fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &Path
         if RESERVED_COLOR_NAMES.contains(&new_name.as_str()) {
             panic!("Line {}: \"{}\" is a reserved label name and cannot be used", line_num + 1, new_name);
         }
+        log::info!("Renamed label {} -> {} (id {})", names[id], new_name, id);
         names[id] = new_name;
     }
 
