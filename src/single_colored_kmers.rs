@@ -59,6 +59,11 @@ impl ColorHierarchy {
         self.tree.root()
     }
 
+    pub fn rename_labels(&mut self, new_names: Vec<String>) {
+        assert_eq!(new_names.len(), self.names.len(), "new_names must have the same length as the current names");
+        self.names = new_names;
+    }
+
     pub fn serialize(&self, out: &mut impl Write) {
         self.tree.serialize(out).unwrap();
         for name in &self.names {
@@ -315,6 +320,10 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     pub fn color_names(&self) -> &[String] {
         self.hierarchy.names()
+    }
+
+    pub fn rename_labels(&mut self, new_names: Vec<String>) {
+        self.hierarchy.rename_labels(new_names);
     }
 
     pub fn k(&self) -> usize {
