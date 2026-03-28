@@ -125,7 +125,7 @@ Options:
   -t, --n-threads <N_THREADS>  Number of parallel threads [default: 4]
   -k <K>                       Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.
       --report-query-names     Print query names instead of query rank integers.
-      --report-misses          Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-label-names is set.
+      --report-misses          Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.
       --no-header              Do not print the header line.
   -h, --help                   Print help
 

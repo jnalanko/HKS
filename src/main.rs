@@ -286,7 +286,7 @@ pub enum Subcommands {
         #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
         report_query_names: bool,
 
-        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is '-' normally, or 'none' when --report-label-names is set.", long = "report-misses")]
+        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.", long = "report-misses")]
         report_misses: bool,
 
         #[arg(help = "Do not print the header line.", long = "no-header")]
