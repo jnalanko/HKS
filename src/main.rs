@@ -343,6 +343,9 @@ pub enum Subcommands {
 
         #[arg(help = "Output filename for the updated index. Can be the same as the input filename to update in place.", short, long, required = true)]
         output: PathBuf,
+
+        #[arg(help = "If set, the first column of the new-names file is interpreted as the current label name instead of the internal id.", long = "names-to-names")]
+        names_to_names: bool,
     },
 
 }
@@ -421,25 +424,41 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     });
 }
 
-fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &PathBuf) {
+fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &PathBuf, names_to_names: bool) {
     let mut index_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
     let mut index = ColorIndex::load(&mut index_input);
 
     // Read current names and apply overrides from TSV
     let mut names: Vec<String> = index.color_names().to_vec();
+    let name_to_id: HashMap<String, usize> = if names_to_names {
+        let mut map = HashMap::new();
+        for (i, name) in names.iter().enumerate() {
+            if map.insert(name.clone(), i).is_some() {
+                panic!("Error: the index has duplicate label name \"{}\". Use internal ids (without --names-to-names) to rename labels in an index with duplicate names.", name);
+            }
+        }
+        map
+    } else {
+        HashMap::new()
+    };
     let tsv_reader = BufReader::new(File::open(new_names_path)
         .unwrap_or_else(|e| panic!("Could not open new names file {}: {e}", new_names_path.display())));
     for (line_num, line) in tsv_reader.lines().enumerate() {
         let line = line.unwrap();
         if line.trim().is_empty() { continue; }
         let mut cols = line.splitn(2, '\t');
-        let id_str = cols.next().unwrap_or_else(|| panic!("Line {}: missing label id", line_num + 1));
+        let first_col = cols.next().unwrap_or_else(|| panic!("Line {}: missing first column", line_num + 1));
         let new_name = cols.next().unwrap_or_else(|| panic!("Line {}: missing new name", line_num + 1)).trim_end_matches(['\n', '\r']).to_owned();
-        let id: usize = id_str.trim().parse().unwrap_or_else(|_| panic!("Line {}: label id is not a valid integer: {}", line_num + 1, id_str));
-        if id >= names.len() {
-            panic!("Line {}: label id {} is out of range (index has {} labels)", line_num + 1, id, names.len());
-        }
+        let id = if names_to_names {
+            *name_to_id.get(first_col.trim()).unwrap_or_else(|| panic!("Line {}: label name not found in index: {}", line_num + 1, first_col.trim()))
+        } else {
+            let id: usize = first_col.trim().parse().unwrap_or_else(|_| panic!("Line {}: label id is not a valid integer: {}", line_num + 1, first_col));
+            if id >= names.len() {
+                panic!("Line {}: label id {} is out of range (index has {} labels)", line_num + 1, id, names.len());
+            }
+            id
+        };
         if RESERVED_COLOR_NAMES.contains(&new_name.as_str()) {
             panic!("Line {}: \"{}\" is a reserved label name and cannot be used", line_num + 1, new_name);
         }
@@ -717,8 +736,8 @@ fn main() {
             }
         },
 
-        Subcommands::RenameLabels { index: index_path, new_names: new_names_path, output: out_path } => {
-            rename_labels(&index_path, &new_names_path, &out_path);
+        Subcommands::RenameLabels { index: index_path, new_names: new_names_path, output: out_path, names_to_names } => {
+            rename_labels(&index_path, &new_names_path, &out_path, names_to_names);
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path} => {
