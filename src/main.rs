@@ -281,7 +281,7 @@ pub enum Subcommands {
         query_args: LookupQueryArgs,
     },
 
-    #[command(arg_required_else_help = true, about = "Load an index once and run multiple queries interactively.")]
+    #[command(arg_required_else_help = true, hide = true, about = "Load an index once and run multiple queries interactively.")]
     Prompt {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
@@ -418,12 +418,17 @@ fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, 
 fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, color_names: &[String]) {
     let stdin = std::io::stdin();
     let mut line = String::new();
+    eprintln!("To run a query, type `-q example/query.fasta -o out.tsv` and press enter.");
+    eprintln!("Hit enter without arguments for more instructions. ");
     loop {
-        eprint!("> ");
+        eprint!("lookup> ");
         line.clear();
         if stdin.lock().read_line(&mut line).unwrap() == 0 { break; }
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            if let Err(e) = LookupQueryArgs::try_parse_from(["prompt", "--help"]) { eprintln!("{e}"); }
+            continue;
+        }
         if matches!(trimmed, "quit" | "exit" | "q") { break; }
         let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
         match LookupQueryArgs::try_parse_from(tokens) {
