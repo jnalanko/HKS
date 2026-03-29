@@ -8,7 +8,7 @@ use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtInde
 use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
 use parallel_queries::OutputWriter;
 
-use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}};
+use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
 
 mod single_colored_kmers;
 mod lca_tree;
@@ -271,33 +271,23 @@ pub enum Subcommands {
 
     #[command(arg_required_else_help = true)]
     Lookup {
-        #[arg(help = "A fasta/fastq query file", short, long, required = true)]
-        query: PathBuf,
-
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
-
-        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
-        n_threads: u64,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
-        #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
-        report_query_names: bool,
+        #[command(flatten)]
+        query_args: LookupQueryArgs,
+    },
 
-        #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.", long = "report-misses")]
-        report_misses: bool,
+    #[command(arg_required_else_help = true, about = "Load an index once and run multiple queries interactively.")]
+    Prompt {
+        #[arg(help = "Path to the index file", short, long, required = true)]
+        index: PathBuf,
 
-        #[arg(help = "Do not print the header line.", long = "no-header")]
-        no_header: bool,
-
-        #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
-        batch_size: u64,
-
-        #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.", long = "report-label-ids", help_heading = "Advanced")]
-        report_label_ids: bool,
-
+        #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
+        k: Option<u64>,
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -350,6 +340,33 @@ pub enum Subcommands {
 
 }
 
+#[derive(Parser, Debug)]
+pub struct LookupQueryArgs {
+    #[arg(help = "A fasta/fastq query file", short, long, required = true)]
+    query: PathBuf,
+
+    #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+    n_threads: u64,
+
+    #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
+    report_query_names: bool,
+
+    #[arg(help = "Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.", long = "report-misses")]
+    report_misses: bool,
+
+    #[arg(help = "Do not print the header line.", long = "no-header")]
+    no_header: bool,
+
+    #[arg(help = "Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism.", long = "batch-size", default_value = "1000000", help_heading = "Advanced", value_parser = clap::value_parser!(u64).range(1..))]
+    batch_size: u64,
+
+    #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.", long = "report-label-ids", help_heading = "Advanced")]
+    report_label_ids: bool,
+
+    #[arg(help = "Output file. Defaults to stdout.", short, long)]
+    output: Option<PathBuf>,
+}
+
 struct DynamicFastXReaderWrapper {
     inner: DynamicFastXReader,
 }
@@ -374,16 +391,43 @@ fn load_seq_names(query_path: &PathBuf) -> Vec<String> {
     seq_names
 }
 
-fn run_queries<W: RunWriter>(n_threads: usize, reader: DynamicFastXReader, index: ColorIndex, batch_size: usize, k: usize, writer: W) {
+fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_threads: usize, reader: DynamicFastXReader, index: &A, batch_size: usize, k: usize, writer: W) {
     let reader = DynamicFastXReaderWrapper { inner: reader };
-    let ColorIndex::FixedK(index) = index;
-    if k < index.k() {
-        log::info!("Preprocessing colors for {}-mer queries", k);
-        let s_index = SingleColoredKmersShort::new(index, k, n_threads);
-        log::info!("Running {}-mer queries", k);
-        parallel_queries::lookup_parallel(n_threads, reader, &s_index, batch_size, k, writer);
+    parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
+}
+
+fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) {
+    let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)) } else { None };
+    let color_names = if args.report_label_ids { None } else { color_names.map(|n| n.to_vec()) };
+    let reader = match DynamicFastXReader::from_file(&args.query) {
+        Ok(r) => r,
+        Err(e) => { eprintln!("Could not open query file {}: {e}", args.query.display()); return; }
+    };
+    let out: Box<dyn Write + Send> = if let Some(ref path) = args.output {
+        Box::new(File::create(path).unwrap_or_else(|e| panic!("Could not create output file {}: {e}", path.display())))
     } else {
-        parallel_queries::lookup_parallel(n_threads, reader, &index, batch_size, k, writer);
+        Box::new(std::io::stdout())
+    };
+    let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
+    log::info!("Running queries from {} ...", args.query.display());
+    run_queries(args.n_threads as usize, reader, index, args.batch_size as usize, k, writer);
+}
+
+fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, color_names: &[String]) {
+    let stdin = std::io::stdin();
+    let mut line = String::new();
+    loop {
+        eprint!("> ");
+        line.clear();
+        if stdin.lock().read_line(&mut line).unwrap() == 0 { break; }
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        if matches!(trimmed, "quit" | "exit" | "q") { break; }
+        let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
+        match LookupQueryArgs::try_parse_from(tokens) {
+            Ok(args) => run_lookup_with_args(index, k, &args, Some(color_names)),
+            Err(e) => eprintln!("{e}"),
+        }
     }
 }
 
@@ -659,10 +703,7 @@ fn main() {
 
         },
 
-        Subcommands::Lookup{query: query_path, index: index_path, n_threads, k, report_label_ids, report_query_names, report_misses, no_header, batch_size} => {
-
-            let (n_threads, batch_size) = (n_threads as usize, batch_size as usize);
-            
+        Subcommands::Lookup { index: index_path, k, query_args } => {
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -671,22 +712,48 @@ fn main() {
             let index = ColorIndex::load(&mut index_input);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
-            let k = k.unwrap_or(index.k() as u64) as usize;
-            if k > index.k() {
-                panic!("Error: query k = {} larger than indexing s = {}", k, index.k());
+            let ColorIndex::FixedK(index_inner) = index;
+            let k = k.unwrap_or(index_inner.k() as u64) as usize;
+            if k > index_inner.k() {
+                panic!("Error: query k = {} larger than indexing s = {}", k, index_inner.k());
             }
 
-            let color_names = if report_label_ids { None } else { Some(index.color_names().to_vec())};
-            let seq_names = if report_query_names { Some(load_seq_names(&query_path)) } else { None };
+            let color_names = index_inner.color_names().to_vec();
 
-            let reader = DynamicFastXReader::from_file(&query_path)
-                .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
+            if k < index_inner.k() {
+                log::info!("Preprocessing colors for {}-mer queries", k);
+                let s_index = SingleColoredKmersShort::new(index_inner, k, query_args.n_threads as usize);
+                run_lookup_with_args(&s_index, k, &query_args, Some(&color_names));
+            } else {
+                run_lookup_with_args(&index_inner, k, &query_args, Some(&color_names));
+            }
+        },
 
-            let stdout = BufWriter::with_capacity(1 << 21, std::io::stdout());
-            let writer = OutputWriter::new(stdout, seq_names, color_names, report_misses, !no_header);
+        Subcommands::Prompt { index: index_path, k } => {
+            log::info!("Loading the index ...");
+            let mut index_input = BufReader::new(File::open(&index_path)
+                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
 
-            log::info!("Running queries from {} ...", query_path.display());
-            run_queries(n_threads, reader, index, batch_size, k, writer);
+            let index_loading_start = std::time::Instant::now();
+            let index = ColorIndex::load(&mut index_input);
+            log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
+
+            let ColorIndex::FixedK(index_inner) = index;
+            let session_k = k.unwrap_or(index_inner.k() as u64) as usize;
+            if session_k > index_inner.k() {
+                panic!("Error: query k = {} larger than indexing s = {}", session_k, index_inner.k());
+            }
+
+            let color_names = index_inner.color_names().to_vec();
+
+            if session_k < index_inner.k() {
+                log::info!("Preprocessing colors for {}-mer queries", session_k);
+                let n_prep = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+                let s_index = SingleColoredKmersShort::new(index_inner, session_k, n_prep);
+                run_prompt_loop(&s_index, session_k, &color_names);
+            } else {
+                run_prompt_loop(&index_inner, session_k, &color_names);
+            }
         },
 
         Subcommands::Stats { index: index_path } => {
