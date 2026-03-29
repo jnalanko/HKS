@@ -277,6 +277,9 @@ pub enum Subcommands {
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
 
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
+
         #[command(flatten)]
         query_args: LookupQueryArgs,
     },
@@ -288,6 +291,9 @@ pub enum Subcommands {
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: Option<u64>,
+
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
     },
 
     #[command(about = "Print statistics about an index file.")]
@@ -345,9 +351,6 @@ pub struct LookupQueryArgs {
     #[arg(help = "A fasta/fastq query file", short, long, required = true)]
     query: PathBuf,
 
-    #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
-    n_threads: u64,
-
     #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
     report_query_names: bool,
 
@@ -400,7 +403,7 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
 }
 
-fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
+fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, n_threads: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
     let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
     let color_names = if args.report_label_ids { None } else { color_names.map(|n| n.to_vec()) };
     let reader = open_fastx(&args.query)?;
@@ -411,11 +414,11 @@ fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, 
     };
     let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
     log::info!("Running queries from {} ...", args.query.display());
-    run_queries(args.n_threads as usize, reader, index, args.batch_size as usize, k, writer);
+    run_queries(n_threads, reader, index, args.batch_size as usize, k, writer);
     Ok(())
 }
 
-fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, color_names: &[String]) {
+fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, n_threads: usize, color_names: &[String]) {
     let stdin = std::io::stdin();
     let mut line = String::new();
     eprintln!("To run a query, type `-q example/query.fasta -o out.tsv` and press enter.");
@@ -432,7 +435,7 @@ fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: us
         if matches!(trimmed, "quit" | "exit" | "q") { break; }
         let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
         match LookupQueryArgs::try_parse_from(tokens) {
-            Ok(args) => if let Err(e) = run_lookup_with_args(index, k, &args, Some(color_names)) { eprintln!("Error: {e}"); },
+            Ok(args) => if let Err(e) = run_lookup_with_args(index, k, n_threads, &args, Some(color_names)) { eprintln!("Error: {e}"); },
             Err(e) => eprintln!("{e}"),
         }
     }
@@ -710,7 +713,7 @@ fn main() {
 
         },
 
-        Subcommands::Lookup { index: index_path, k, query_args } => {
+        Subcommands::Lookup { index: index_path, k, n_threads, query_args } => {
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -727,16 +730,17 @@ fn main() {
 
             let color_names = index_inner.color_names().to_vec();
 
+            let n_threads = n_threads as usize;
             if k < index_inner.k() {
                 log::info!("Preprocessing colors for {}-mer queries", k);
-                let s_index = SingleColoredKmersShort::new(index_inner, k, query_args.n_threads as usize);
-                run_lookup_with_args(&s_index, k, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
+                let s_index = SingleColoredKmersShort::new(index_inner, k, n_threads);
+                run_lookup_with_args(&s_index, k, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
             } else {
-                run_lookup_with_args(&index_inner, k, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
+                run_lookup_with_args(&index_inner, k, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
             }
         },
 
-        Subcommands::Prompt { index: index_path, k } => {
+        Subcommands::Prompt { index: index_path, k, n_threads } => {
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -753,13 +757,13 @@ fn main() {
 
             let color_names = index_inner.color_names().to_vec();
 
+            let n_threads = n_threads as usize;
             if session_k < index_inner.k() {
                 log::info!("Preprocessing colors for {}-mer queries", session_k);
-                let n_prep = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-                let s_index = SingleColoredKmersShort::new(index_inner, session_k, n_prep);
-                run_prompt_loop(&s_index, session_k, &color_names);
+                let s_index = SingleColoredKmersShort::new(index_inner, session_k, n_threads);
+                run_prompt_loop(&s_index, session_k, n_threads, &color_names);
             } else {
-                run_prompt_loop(&index_inner, session_k, &color_names);
+                run_prompt_loop(&index_inner, session_k, n_threads, &color_names);
             }
         },
 
