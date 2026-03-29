@@ -22,6 +22,7 @@ mod traits;
 mod color_storage;
 
 type FixedKColorIndex = SingleColoredKmers<LcsWrapper, SimpleColorStorage>;
+type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
 
 enum ColorIndex { // For now just one variant, might add more later
     FixedK(FixedKColorIndex),
@@ -403,7 +404,8 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
 }
 
-fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, n_threads: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
+fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
+    let k = index.query_k();
     let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
     let color_names = if args.report_label_ids { None } else { color_names.map(|n| n.to_vec()) };
     let reader = open_fastx(&args.query)?;
@@ -418,7 +420,7 @@ fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, 
     Ok(())
 }
 
-fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, n_threads: usize, color_names: &[String]) {
+fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize, color_names: &[String]) {
     let stdin = std::io::stdin();
     let mut line = String::new();
     eprintln!("To run a query, type `-q example/query.fasta -o out.tsv` and press enter.");
@@ -435,7 +437,7 @@ fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: us
         if matches!(trimmed, "quit" | "exit" | "q") { break; }
         let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
         match LookupQueryArgs::try_parse_from(tokens) {
-            Ok(args) => if let Err(e) = run_lookup_with_args(index, k, n_threads, &args, Some(color_names)) { eprintln!("Error: {e}"); },
+            Ok(args) => if let Err(e) = run_lookup_with_args(index, n_threads, &args, Some(color_names)) { eprintln!("Error: {e}"); },
             Err(e) => eprintln!("{e}"),
         }
     }
@@ -731,13 +733,9 @@ fn main() {
             let color_names = index_inner.color_names().to_vec();
 
             let n_threads = n_threads as usize;
-            if k < index_inner.k() {
-                log::info!("Preprocessing colors for {}-mer queries", k);
-                let s_index = SingleColoredKmersShort::new(index_inner, k, n_threads);
-                run_lookup_with_args(&s_index, k, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
-            } else {
-                run_lookup_with_args(&index_inner, k, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
-            }
+            // Constructor does extra preprocessing if k < index_inner.k()
+            let index = ShortKColorIndex::new(index_inner, k, n_threads);
+            run_lookup_with_args(&index, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
         },
 
         Subcommands::Prompt { index: index_path, k, n_threads } => {
@@ -758,13 +756,9 @@ fn main() {
             let color_names = index_inner.color_names().to_vec();
 
             let n_threads = n_threads as usize;
-            if session_k < index_inner.k() {
-                log::info!("Preprocessing colors for {}-mer queries", session_k);
-                let s_index = SingleColoredKmersShort::new(index_inner, session_k, n_threads);
-                run_prompt_loop(&s_index, session_k, n_threads, &color_names);
-            } else {
-                run_prompt_loop(&index_inner, session_k, n_threads, &color_names);
-            }
+            // Constructor does extra preprocessing if session_k < index_inner.k()
+            let index = ShortKColorIndex::new(index_inner, session_k, n_threads);
+            run_prompt_loop(&index, n_threads, &color_names);
         },
 
         Subcommands::Stats { index: index_path } => {

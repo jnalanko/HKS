@@ -689,15 +689,22 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
 pub struct SingleColoredKmersShort<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     inner: SingleColoredKmers<L,C>, // k-mers sharing an s-mer have been made to have the same color: the LCA in the color hierarchy
+    k: usize, // the query k-mer length
 }
 
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync + Send, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> SingleColoredKmersShort<L,C> {
 
-    // s is the query length. s <= k
-    pub fn new(mut inner: SingleColoredKmers<L, C>, s: usize, n_threads: usize) -> Self {
-        assert!(s <= inner.sbwt.k());
-        inner.colors.substitute_lca_for_s_mer_ranges(s, inner.hierarchy.tree(), &inner.lcs, n_threads);
-        Self { inner }
+    pub fn new(mut inner: SingleColoredKmers<L, C>, k: usize, n_threads: usize) -> Self {
+        assert!(k <= inner.sbwt.k());
+        if k < inner.sbwt.k() {
+            log::info!("Preprocessing colors for {}-mer queries", k);
+            inner.colors.substitute_lca_for_s_mer_ranges(k, inner.hierarchy.tree(), &inner.lcs, n_threads);
+        }
+        Self { inner, k }
+    }
+
+    pub fn query_k(&self) -> usize {
+        self.k
     }
 
     pub fn into_inner(self) -> SingleColoredKmers<L, C> {
