@@ -281,10 +281,11 @@ pub enum Subcommands {
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
         n_threads: u64,
 
-        #[command(flatten)]
+        #[command(flatten)] // These options are also used in the interactive prompt
         query_args: LookupQueryArgs,
     },
 
+    // Hidden prompt command (hidden because the user interface might still change a lot)
     #[command(arg_required_else_help = true, hide = true, about = "Load an index once and run multiple queries interactively.")]
     Prompt {
         #[arg(help = "Path to the index file", short, long, required = true)]
@@ -407,8 +408,10 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
 fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
     let k = index.query_k();
     let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
-    let color_names = if args.report_label_ids { None } else { color_names.map(|n| n.to_vec()) };
+    let color_names = if args.report_label_ids { None } else { color_names.map(|name| name.to_vec()) };
     let reader = open_fastx(&args.query)?;
+
+    // A dynamic writer is fine performance-wise because it's wapped in a buffered writer.
     let out: Box<dyn Write + Send> = if let Some(ref path) = args.output {
         Box::new(File::create(path).map_err(|e| format!("Could not create output file {}: {e}", path.display()))?)
     } else {
