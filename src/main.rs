@@ -377,18 +377,22 @@ impl sbwt::SeqStream for DynamicFastXReaderWrapper{
     }
 }
 
-fn load_seq_names(query_path: &PathBuf) -> Vec<String> {
+fn open_fastx(path: &PathBuf) -> Result<DynamicFastXReader, String> {
+    let file = File::open(path).map_err(|e| format!("Could not open file {}: {e}", path.display()))?;
+    DynamicFastXReader::new(BufReader::new(file)).map_err(|e| format!("Could not read file {}: {e}", path.display()))
+}
+
+fn load_seq_names(query_path: &PathBuf) -> Result<Vec<String>, String> {
     log::info!("Collecting sequence names from {} ...", query_path.display());
-    let mut name_reader = DynamicFastXReader::from_file(query_path)
-        .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
+    let mut name_reader = open_fastx(query_path)?;
     let mut seq_names = Vec::new();
-    while let Some(rec) = name_reader.read_next().unwrap() {
-        let header = std::str::from_utf8(rec.head).unwrap();
+    while let Some(rec) = name_reader.read_next().map_err(|e| format!("Error reading query file {}: {e}", query_path.display()))? {
+        let header = std::str::from_utf8(rec.head).map_err(|e| format!("Invalid UTF-8 in sequence header in {}: {e}", query_path.display()))?;
         let name = header.split_whitespace().next().unwrap_or(header);
         seq_names.push(name.to_string());
     }
     log::info!("Collected {} sequence names from query file", seq_names.len());
-    seq_names
+    Ok(seq_names)
 }
 
 fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_threads: usize, reader: DynamicFastXReader, index: &A, batch_size: usize, k: usize, writer: W) {
@@ -396,21 +400,19 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
 }
 
-fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) {
-    let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)) } else { None };
+fn run_lookup_with_args<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
+    let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
     let color_names = if args.report_label_ids { None } else { color_names.map(|n| n.to_vec()) };
-    let reader = match DynamicFastXReader::from_file(&args.query) {
-        Ok(r) => r,
-        Err(e) => { eprintln!("Could not open query file {}: {e}", args.query.display()); return; }
-    };
+    let reader = open_fastx(&args.query)?;
     let out: Box<dyn Write + Send> = if let Some(ref path) = args.output {
-        Box::new(File::create(path).unwrap_or_else(|e| panic!("Could not create output file {}: {e}", path.display())))
+        Box::new(File::create(path).map_err(|e| format!("Could not create output file {}: {e}", path.display()))?)
     } else {
         Box::new(std::io::stdout())
     };
     let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
     log::info!("Running queries from {} ...", args.query.display());
     run_queries(args.n_threads as usize, reader, index, args.batch_size as usize, k, writer);
+    Ok(())
 }
 
 fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: usize, color_names: &[String]) {
@@ -425,7 +427,7 @@ fn run_prompt_loop<A: ColoredKmerLookupAlgorithm + Send + Sync>(index: &A, k: us
         if matches!(trimmed, "quit" | "exit" | "q") { break; }
         let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
         match LookupQueryArgs::try_parse_from(tokens) {
-            Ok(args) => run_lookup_with_args(index, k, &args, Some(color_names)),
+            Ok(args) => if let Err(e) = run_lookup_with_args(index, k, &args, Some(color_names)) { eprintln!("Error: {e}"); },
             Err(e) => eprintln!("{e}"),
         }
     }
@@ -723,9 +725,9 @@ fn main() {
             if k < index_inner.k() {
                 log::info!("Preprocessing colors for {}-mer queries", k);
                 let s_index = SingleColoredKmersShort::new(index_inner, k, query_args.n_threads as usize);
-                run_lookup_with_args(&s_index, k, &query_args, Some(&color_names));
+                run_lookup_with_args(&s_index, k, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
             } else {
-                run_lookup_with_args(&index_inner, k, &query_args, Some(&color_names));
+                run_lookup_with_args(&index_inner, k, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
             }
         },
 
