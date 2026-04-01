@@ -334,7 +334,7 @@ pub enum Subcommands {
 
     #[command(arg_required_else_help = true, about = "Apply hierarchy-aware smoothing to lookup output.")]
     Smooth {
-        #[arg(help = "Path to the hierarchy file used during index construction. The hierarchy defines which labels are ancestors of which. Mutually exclusive with --index.", long, conflicts_with = "index", required_unless_present = "index")]
+        #[arg(help = "Path to the hierarchy file used during index construction. Mutually exclusive with --index.", long, conflicts_with = "index", required_unless_present = "index")]
         hierarchy: Option<PathBuf>,
 
         #[arg(help = "Path to an HKS index file to extract the label hierarchy from. Use this if you no longer have the original hierarchy file. Mutually exclusive with --hierarchy.", long, conflicts_with = "hierarchy", required_unless_present = "hierarchy")]
