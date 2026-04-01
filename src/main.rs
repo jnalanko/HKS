@@ -332,6 +332,24 @@ pub enum Subcommands {
         index: PathBuf,
     },
 
+    #[command(arg_required_else_help = true, about = "Apply hierarchy-aware smoothing to lookup output.")]
+    Smooth {
+        #[arg(help = "Path to the hierarchy file used during index construction. The hierarchy defines which labels are ancestors of which. Mutually exclusive with --index.", long, conflicts_with = "index", required_unless_present = "index")]
+        hierarchy: Option<PathBuf>,
+
+        #[arg(help = "Path to an HKS index file to extract the label hierarchy from. Use this if you no longer have the original hierarchy file. Mutually exclusive with --hierarchy.", short, long, conflicts_with = "hierarchy", required_unless_present = "hierarchy")]
+        index: Option<PathBuf>,
+
+        #[arg(help = "Input TSV file containing the output of the 'lookup' subcommand to be smoothed. Defaults to stdin if not specified.", short, long)]
+        input: Option<PathBuf>,
+
+        #[arg(help = "Output file for the smoothed TSV. Defaults to stdout if not specified.", short, long)]
+        output: Option<PathBuf>,
+
+        #[arg(help = "Maximum gap in bases between two adjacent intervals that are still considered connected for the purposes of the smoothing window. Intervals further apart than this are treated as belonging to separate windows.", short = 'g', long = "max-gap", default_value = "0")]
+        max_gap: u64,
+    },
+
     #[command(arg_required_else_help = true, hide = true, about = "Rename labels in an index file.")]
     RenameLabels {
         #[arg(help = "Path to the index file", short, long, required = true)]
@@ -482,6 +500,42 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
             stdout.flush().unwrap();
         });
     });
+}
+
+fn run_smooth_command(hierarchy_path: Option<PathBuf>, index_path: Option<PathBuf>, input: Option<PathBuf>, output: Option<PathBuf>, max_gap: u64) {
+    let hierarchy = if let Some(path) = hierarchy_path {
+        let (tree, names) = read_hierarchy_file(&path, &[]);
+        single_colored_kmers::ColorHierarchy::with_tree(tree, names)
+    } else {
+        let path = index_path.unwrap();
+        log::info!("Loading the index ...");
+        let mut f = BufReader::new(File::open(&path)
+            .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", path.display())));
+        let index = ColorIndex::load(&mut f);
+        single_colored_kmers::ColorHierarchy::with_tree(
+            index.color_hierarchy().clone(),
+            index.color_names().to_vec(),
+        )
+    };
+
+    let input: Box<dyn Read> = match input {
+        Some(path) => Box::new(File::open(&path)
+            .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", path.display()))),
+        None => Box::new(std::io::stdin()),
+    };
+    let output: Box<dyn Write> = match output {
+        Some(path) => Box::new(File::create(&path)
+            .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", path.display()))),
+        None => Box::new(std::io::stdout()),
+    };
+
+    log::info!("Running smoothing ...");
+    let stats = smooth::run_smooth(input, output, &hierarchy, max_gap);
+    log::info!(
+        "Smoothed {} reads: {} intervals in, {} reassigned, {} merged, {} out",
+        stats.reads_processed, stats.intervals_in, stats.intervals_smoothed,
+        stats.intervals_merged, stats.intervals_out,
+    );
 }
 
 fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &PathBuf, names_to_names: bool) {
@@ -811,6 +865,10 @@ fn main() {
                     println!("{} {}", names[node], names[tree.parent(node)]);
                 }
             }
+        },
+
+        Subcommands::Smooth { hierarchy, index, input, output, max_gap } => {
+            run_smooth_command(hierarchy, index, input, output, max_gap);
         },
 
         Subcommands::RenameLabels { index: index_path, new_names: new_names_path, output: out_path, names_to_names } => {
