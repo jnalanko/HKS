@@ -20,6 +20,7 @@ mod util;
 mod wavelet_tree;
 mod traits;
 mod color_storage;
+mod smooth;
 
 type FixedKColorIndex = SingleColoredKmers<LcsWrapper, SimpleColorStorage>;
 type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;

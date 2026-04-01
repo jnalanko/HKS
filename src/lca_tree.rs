@@ -89,6 +89,23 @@ impl LcaTree {
         self.lca_support.lca(a, b)
     }
 
+    /// Returns true if `candidate` is an ancestor-or-equal of `node`.
+    /// Uses LCA for O(1) query: candidate is an ancestor of node iff lca(node, candidate) == candidate.
+    pub fn is_ancestor(&self, node: usize, candidate: usize) -> bool {
+        self.lca(node, candidate) == candidate
+    }
+
+    /// Returns an iterator over all strict ancestors of `node` (not including `node` itself),
+    /// from parent up to the root, by walking the parent array.
+    pub fn ancestors(&self, node: usize) -> impl Iterator<Item = usize> + '_ {
+        let mut cur = Some(node);
+        std::iter::from_fn(move || {
+            let val = cur?;
+            cur = if self.parent[val] == val { None } else { Some(self.parent[val]) };
+            Some(val)
+        })
+    }
+
     /// Returns the lowest common ancestor of nodes `a` and `b`.
     pub fn lca_options(&self, a: Option<usize>, b: Option<usize>) -> Option<usize> {
         if a.is_none() { return b }
@@ -322,5 +339,77 @@ mod tests {
     fn error_zero_nodes() {
         let err = LcaTree::new(0, vec![]).unwrap_err();
         assert!(err.contains("at least one"), "{err}");
+    }
+
+    // --- is_ancestor ---
+
+    #[test]
+    fn is_ancestor_binary_tree() {
+        let t = binary_tree();
+        // root (6) is ancestor of everyone
+        for i in 0..7 {
+            assert!(t.is_ancestor(i, 6), "6 should be ancestor of {i}");
+        }
+        // internal node 4 is ancestor of its leaves 0,1 and itself, not of 2,3,5
+        assert!(t.is_ancestor(0, 4));
+        assert!(t.is_ancestor(1, 4));
+        assert!(t.is_ancestor(4, 4)); // reflexive
+        assert!(!t.is_ancestor(2, 4));
+        assert!(!t.is_ancestor(3, 4));
+        assert!(!t.is_ancestor(5, 4));
+        // leaves are not ancestors of anything except themselves
+        assert!(t.is_ancestor(0, 0));
+        assert!(!t.is_ancestor(1, 0));
+        assert!(!t.is_ancestor(6, 0));
+    }
+
+    #[test]
+    fn is_ancestor_path_tree() {
+        // Chain: 0 -> 1 -> 2 -> 3 -> 4 (root)
+        let t = path_tree(5);
+        // Every node is an ancestor of 0
+        for anc in 0..5 {
+            assert!(t.is_ancestor(0, anc), "{anc} should be ancestor of 0");
+        }
+        // 0 is only an ancestor of itself
+        for desc in 1..5 {
+            assert!(!t.is_ancestor(desc, 0), "0 should not be ancestor of {desc}");
+        }
+        // 2 is an ancestor of 1 and 0, not of 3 or 4's subtree peers
+        assert!(t.is_ancestor(1, 2));
+        assert!(t.is_ancestor(0, 2));
+        assert!(!t.is_ancestor(3, 2));
+        assert!(!t.is_ancestor(4, 2));
+    }
+
+    // --- ancestors ---
+
+    #[test]
+    fn ancestors_binary_tree() {
+        let t = binary_tree();
+        // Leaf 0: self + ancestors should be 0, 4, 6
+        let ancs: Vec<usize> = t.ancestors(0).collect();
+        assert_eq!(ancs, vec![0, 4, 6]);
+        // Leaf 2: self + ancestors should be 2, 5, 6
+        let ancs: Vec<usize> = t.ancestors(2).collect();
+        assert_eq!(ancs, vec![2, 5, 6]);
+        // Internal node 4: self + ancestors should be 4, 6
+        let ancs: Vec<usize> = t.ancestors(4).collect();
+        assert_eq!(ancs, vec![4, 6]);
+        // Root 6: just itself
+        let ancs: Vec<usize> = t.ancestors(6).collect();
+        assert_eq!(ancs, vec![6]);
+    }
+
+    #[test]
+    fn ancestors_path_tree() {
+        // Chain: 0 -> 1 -> 2 -> 3 -> 4 (root)
+        let t = path_tree(5);
+        let ancs: Vec<usize> = t.ancestors(0).collect();
+        assert_eq!(ancs, vec![0, 1, 2, 3, 4]);
+        let ancs: Vec<usize> = t.ancestors(3).collect();
+        assert_eq!(ancs, vec![3, 4]);
+        let ancs: Vec<usize> = t.ancestors(4).collect();
+        assert_eq!(ancs, vec![4]);
     }
 }
