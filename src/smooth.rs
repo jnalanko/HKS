@@ -26,6 +26,152 @@ pub struct Interval {
 // Core smoothing algorithm (port of Algorithm S1)
 // ---------------------------------------------------------------------------
 
+/// One pass of the smoothing loop over all intervals.
+/// Returns `(changed, reassignments)`: whether any feature was reassigned and how many.
+fn smooth_pass(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: u64, n: usize) -> (bool, u64) {
+    let mut changed = false;
+    let mut reassignments = 0u64;
+    let mut was_related = vec![false; n];
+    let mut i = 0;
+
+    while i < n {
+        let window_start = i;
+        let mut related: Vec<usize> = vec![i];
+        let mut first_unrelated: Option<usize> = None;
+
+        // ------------------------------------------------------------------
+        // Ancestor phase: scan rightward accepting intervals whose features
+        // are ancestors of the left anchor's feature (more general).
+        // Unrelated features on other branches are skipped but their ancestor
+        // paths are added to `disallowed` so we stop if we'd cross into them.
+        // ------------------------------------------------------------------
+        let mut disallowed: HashSet<usize> = HashSet::new();
+        let mut last_rel_idx = i;
+        let mut last_rel_feat = intervals[i].feature;
+        let mut last_rel_end = intervals[i].end;
+        let mut j = i;
+
+        while j + 1 < n {
+            let nf = intervals[j + 1].feature;
+            let ns = intervals[j + 1].start;
+
+            if ns > last_rel_end + max_gap {
+                break;
+            }
+
+            if tree.is_ancestor(last_rel_feat, nf) {
+                // nf IS an ancestor of last_rel_feat → more general → extend
+                if disallowed.contains(&nf) {
+                    break;
+                }
+                last_rel_feat = nf;
+                last_rel_end = intervals[j + 1].end;
+                last_rel_idx = j + 1;
+                related.push(j + 1);
+                j += 1;
+            } else if !tree.is_ancestor(nf, last_rel_feat) {
+                // Neither is ancestor of the other → different branches
+                disallowed.extend(tree.ancestors(nf));
+                if first_unrelated.is_none() && !was_related[j + 1] {
+                    first_unrelated = Some(j + 1);
+                }
+                j += 1;
+            } else {
+                // last_rel_feat IS ancestor of nf → nf is more specific → stop
+                break;
+            }
+        }
+
+        let mut window_end = last_rel_idx;
+
+        // ------------------------------------------------------------------
+        // Descendant phase: continue rightward from the turning point,
+        // accepting intervals whose features are descendants of the turning
+        // point's feature (more specific).
+        // ------------------------------------------------------------------
+        let peak_feat = intervals[window_end].feature;
+        let mut k = window_end;
+
+        while k + 1 < n {
+            let nf = intervals[k + 1].feature;
+            let ns = intervals[k + 1].start;
+
+            if ns > last_rel_end + max_gap {
+                break;
+            }
+
+            if tree.is_ancestor(nf, last_rel_feat) {
+                // last_rel_feat IS ancestor of nf → nf is more specific → extend
+                last_rel_feat = nf;
+                last_rel_end = intervals[k + 1].end;
+                last_rel_idx = k + 1;
+                related.push(k + 1);
+                k += 1;
+            } else if !tree.is_ancestor(last_rel_feat, nf) {
+                // Neither is ancestor → unrelated
+                if tree.is_ancestor(nf, peak_feat) {
+                    // nf is a descendant of peak → would restart a new window → stop
+                    break;
+                }
+                if first_unrelated.is_none() && !was_related[k + 1] {
+                    first_unrelated = Some(k + 1);
+                }
+                k += 1;
+            } else {
+                // nf IS ancestor of last_rel_feat → nf is more general → stop
+                break;
+            }
+        }
+
+        window_end = last_rel_idx;
+
+        // Drop the last element from related (boundary stays unchanged)
+        if related.len() >= 2 {
+            related.pop();
+        }
+        for &idx in &related {
+            was_related[idx] = true;
+        }
+
+        // ------------------------------------------------------------------
+        // Reassignment: replace interior features with LCA(left, right) when
+        // they are strictly more general (shallower) than the LCA.
+        // ------------------------------------------------------------------
+        if window_end > window_start {
+            let left = intervals[window_start].feature;
+            let right = intervals[window_end].feature;
+            let lca = tree.lca(left, right);
+            for w in (window_start + 1)..window_end {
+                let orig = intervals[w].feature;
+                // is_ancestor(lca, orig) means orig IS an ancestor of lca,
+                // i.e. orig is more general than lca → replace with lca
+                if tree.is_ancestor(lca, orig) && orig != lca {
+                    intervals[w].feature = lca;
+                    intervals[w].originally_none = false;
+                    changed = true;
+                    reassignments += 1;
+                }
+            }
+        }
+
+        // Advance i
+        i = match first_unrelated {
+            Some(fu) if fu > window_end && window_end > window_start => window_end,
+            Some(fu) => fu,
+            None if window_end > i => window_end,
+            None => {
+                let mut next = i;
+                while next < n && was_related[next] {
+                    next += 1;
+                }
+                next
+            }
+        };
+    }
+
+    (changed, reassignments)
+}
+
 /// Smooth a single query's intervals in-place using the hierarchy.
 /// Returns the number of feature reassignments made.
 pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: u64) -> u64 {
@@ -36,145 +182,8 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
     let n = intervals.len();
 
     loop {
-        let mut changed = false;
-        let mut was_related = vec![false; n];
-        let mut i = 0;
-
-        while i < n {
-            let window_start = i;
-            let mut related: Vec<usize> = vec![i];
-            let mut first_unrelated: Option<usize> = None;
-
-            // ------------------------------------------------------------------
-            // Ancestor phase: scan rightward accepting intervals whose features
-            // are ancestors of the left anchor's feature (more general).
-            // Unrelated features on other branches are skipped but their ancestor
-            // paths are added to `disallowed` so we stop if we'd cross into them.
-            // ------------------------------------------------------------------
-            let mut disallowed: HashSet<usize> = HashSet::new();
-            let mut last_rel_idx = i;
-            let mut last_rel_feat = intervals[i].feature;
-            let mut last_rel_end = intervals[i].end;
-            let mut j = i;
-
-            while j + 1 < n {
-                let nf = intervals[j + 1].feature;
-                let ns = intervals[j + 1].start;
-
-                if ns > last_rel_end + max_gap {
-                    break;
-                }
-
-                if tree.is_ancestor(last_rel_feat, nf) {
-                    // nf IS an ancestor of last_rel_feat → more general → extend
-                    if disallowed.contains(&nf) {
-                        break;
-                    }
-                    last_rel_feat = nf;
-                    last_rel_end = intervals[j + 1].end;
-                    last_rel_idx = j + 1;
-                    related.push(j + 1);
-                    j += 1;
-                } else if !tree.is_ancestor(nf, last_rel_feat) {
-                    // Neither is ancestor of the other → different branches
-                    disallowed.extend(tree.ancestors(nf));
-                    if first_unrelated.is_none() && !was_related[j + 1] {
-                        first_unrelated = Some(j + 1);
-                    }
-                    j += 1;
-                } else {
-                    // last_rel_feat IS ancestor of nf → nf is more specific → stop
-                    break;
-                }
-            }
-
-            let mut window_end = last_rel_idx;
-
-            // ------------------------------------------------------------------
-            // Descendant phase: continue rightward from the turning point,
-            // accepting intervals whose features are descendants of the turning
-            // point's feature (more specific).
-            // ------------------------------------------------------------------
-            let peak_feat = intervals[window_end].feature;
-            let mut k = window_end;
-
-            while k + 1 < n {
-                let nf = intervals[k + 1].feature;
-                let ns = intervals[k + 1].start;
-
-                if ns > last_rel_end + max_gap {
-                    break;
-                }
-
-                if tree.is_ancestor(nf, last_rel_feat) {
-                    // last_rel_feat IS ancestor of nf → nf is more specific → extend
-                    last_rel_feat = nf;
-                    last_rel_end = intervals[k + 1].end;
-                    last_rel_idx = k + 1;
-                    related.push(k + 1);
-                    k += 1;
-                } else if !tree.is_ancestor(last_rel_feat, nf) {
-                    // Neither is ancestor → unrelated
-                    if tree.is_ancestor(nf, peak_feat) {
-                        // nf is a descendant of peak → would restart a new window → stop
-                        break;
-                    }
-                    if first_unrelated.is_none() && !was_related[k + 1] {
-                        first_unrelated = Some(k + 1);
-                    }
-                    k += 1;
-                } else {
-                    // nf IS ancestor of last_rel_feat → nf is more general → stop
-                    break;
-                }
-            }
-
-            window_end = last_rel_idx;
-
-            // Drop the last element from related (boundary stays unchanged)
-            if related.len() >= 2 {
-                related.pop();
-            }
-            for &idx in &related {
-                was_related[idx] = true;
-            }
-
-            // ------------------------------------------------------------------
-            // Reassignment: replace interior features with LCA(left, right) when
-            // they are strictly more general (shallower) than the LCA.
-            // ------------------------------------------------------------------
-            if window_end > window_start {
-                let left = intervals[window_start].feature;
-                let right = intervals[window_end].feature;
-                let lca = tree.lca(left, right);
-                for w in (window_start + 1)..window_end {
-                    let orig = intervals[w].feature;
-                    // is_ancestor(lca, orig) means orig IS an ancestor of lca,
-                    // i.e. orig is more general than lca → replace with lca
-                    if tree.is_ancestor(lca, orig) && orig != lca {
-                        intervals[w].feature = lca;
-                        intervals[w].originally_none = false;
-                        changed = true;
-                        total_reassignments += 1;
-                    }
-                }
-            }
-
-            // Advance i
-            i = match first_unrelated {
-                Some(fu) if fu > window_end && window_end > window_start => window_end,
-                Some(fu) => fu,
-                None if window_end > i => window_end,
-                None => {
-                    let mut next = i;
-                    while next < n && was_related[next] {
-                        next += 1;
-                    }
-                    next
-                }
-            };
-        }
-
+        let (changed, reassignments) = smooth_pass(intervals, tree, max_gap, n);
+        total_reassignments += reassignments;
         if !changed {
             break;
         }
