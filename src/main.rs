@@ -337,7 +337,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the hierarchy file used during index construction. The hierarchy defines which labels are ancestors of which. Mutually exclusive with --index.", long, conflicts_with = "index", required_unless_present = "index")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Path to an HKS index file to extract the label hierarchy from. Use this if you no longer have the original hierarchy file. Mutually exclusive with --hierarchy.", short, long, conflicts_with = "hierarchy", required_unless_present = "hierarchy")]
+        #[arg(help = "Path to an HKS index file to extract the label hierarchy from. Use this if you no longer have the original hierarchy file. Mutually exclusive with --hierarchy.", long, conflicts_with = "hierarchy", required_unless_present = "hierarchy")]
         index: Option<PathBuf>,
 
         #[arg(help = "Input TSV file containing the output of the 'lookup' subcommand to be smoothed. Defaults to stdin if not specified.", short, long)]
