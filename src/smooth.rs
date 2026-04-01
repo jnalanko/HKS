@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
 use crate::lca_tree::LcaTree;
+use crate::single_colored_kmers::ColorHierarchy;
 
 // ---------------------------------------------------------------------------
 // Interval representation
@@ -274,21 +275,19 @@ fn format_feature(
 /// Flush a completed query: smooth → merge → write.
 fn flush_query(
     buf: &mut Vec<Interval>,
-    tree: &LcaTree,
-    names: &[String],
-    root_id: usize,
+    hierarchy: &ColorHierarchy,
     uses_names: bool,
     max_gap: u64,
     writer: &mut impl Write,
     stats: &mut SmoothStats,
 ) {
     let n_in = buf.len() as u64;
-    let reassigned = smooth_intervals(buf, tree, max_gap);
+    let reassigned = smooth_intervals(buf, hierarchy.tree(), max_gap);
     let (merged, eliminated) = merge_intervals(std::mem::take(buf));
     let n_out = merged.len() as u64;
 
     for iv in &merged {
-        let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
+        let feat_str = format_feature(iv.feature, iv.originally_none, hierarchy.names(), hierarchy.root(), uses_names);
         writeln!(writer, "{}\t{}\t{}\t{}", iv.query_id, iv.start, iv.end, feat_str)
             .expect("write error");
     }
@@ -304,11 +303,11 @@ fn flush_query(
 pub fn run_smooth(
     input: impl Read,
     output: impl Write,
-    tree: &LcaTree,
-    names: &[String],
-    root_id: usize,
+    hierarchy: &ColorHierarchy,
     max_gap: u64,
 ) -> SmoothStats {
+    let names = hierarchy.names();
+    let root_id = hierarchy.root();
     // Build name → id lookup
     let name_to_id: std::collections::HashMap<String, usize> = names.iter()
         .enumerate()
@@ -359,7 +358,7 @@ pub fn run_smooth(
         if query_id != current_query {
             if !buf.is_empty() {
                 log::info!("Smoothing {}", current_query);
-                flush_query(&mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
+                flush_query(&mut buf, hierarchy, uses_names, max_gap, &mut writer, &mut stats);
             }
             current_query = query_id.clone();
         }
@@ -376,7 +375,7 @@ pub fn run_smooth(
     // Flush final query
     if !buf.is_empty() {
         log::info!("Smoothing {}", current_query);
-        flush_query(&mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
+        flush_query(&mut buf, hierarchy, uses_names, max_gap, &mut writer, &mut stats);
     }
 
     writer.flush().expect("flush error");
