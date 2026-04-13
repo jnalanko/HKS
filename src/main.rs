@@ -34,7 +34,7 @@ enum ColorIndex { // For now just one variant, might add more later
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
-const HKS_FILE_ID: [u8; 8] = *b"hks0.1.3";
+const HKS_FILE_ID: [u8; 8] = *b"hks0.1.4";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
 
@@ -197,7 +197,7 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     nones_to_multiples: bool,
 ) {
     log::info!("Marking colors");
-    let mut index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy);
+    let mut index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, "unnamed");
     if nones_to_multiples {
         log::info!("Turning Nones into roots");
         index.turn_nones_to_roots();

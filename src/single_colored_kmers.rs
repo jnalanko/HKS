@@ -89,20 +89,30 @@ impl ColorHierarchy {
 
 #[derive(Debug, Clone)]
 pub struct FeatureSet<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
-    pub color_assignments: C,
-    pub hierarchy: ColorHierarchy,
+    pub color_assignments: C, // Map colex -> color id (integer)
+    pub hierarchy: ColorHierarchy, // Color hierarchy for the color ids in color_assignments
+    pub name: String, // Name of the feature set
 }
 
 impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> FeatureSet<C> {
     pub fn serialize(&self, out: &mut impl Write) {
         self.color_assignments.serialize(out);
         self.hierarchy.serialize(out);
+
+        bincode::serialize_into(&mut *out, &(self.name.as_bytes().len() as u64)).unwrap();
+        out.write_all(self.name.as_bytes()).unwrap();
     }
 
     pub fn load(input: &mut impl Read) -> Self {
         let color_assignments = *C::load(input);
         let hierarchy = ColorHierarchy::load(input);
-        Self { color_assignments, hierarchy }
+
+        let name_bytes_len: u64 = bincode::deserialize_from(&mut *input).unwrap();
+        let mut name_bytes = vec![0_u8; name_bytes_len as usize];
+        input.read_exact(&mut name_bytes).unwrap();
+        let name = String::from_utf8(name_bytes).unwrap();
+
+        Self { color_assignments, hierarchy, name }
     }
 }
 
@@ -359,7 +369,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     // This is used to identify the version of the serialization format
     fn serialization_version_number() -> u32 {
-        5_u32
+        6_u32
     }
 
     pub fn serialize(&self, mut out: &mut impl Write) {
@@ -612,7 +622,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     }
 
 
-    pub fn new<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy) -> Self {
+    pub fn new<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy, feature_set_name: &str) -> Self {
         let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1); // +1 for the "none"
 
         log::info!("Marking colors");
@@ -626,19 +636,19 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
             SingleColoredKmers::<L,C>::mark_colors::<T, Vec::<AtomicU64>>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
         };
 
-        Self::new_given_coloring(sbwt, lcs, color_storage, hierarchy)
+        log::info!("Indexing color id array");
+        let color_assignments = C::from(color_storage);
+        let fs = FeatureSet{color_assignments, hierarchy, name: feature_set_name.to_owned()};
+        Self::new_given_feature_set(sbwt, lcs, fs)
     }
 
-    pub fn new_given_coloring(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, coloring: SimpleColorStorage, hierarchy: ColorHierarchy) -> Self {
+    pub fn new_given_feature_set(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, feature_set: FeatureSet<C>) -> Self {
         log::info!("Indexing LCS array");
         let lcs_index = L::from(lcs);
 
-        log::info!("Building Color id wavelet tree");
-        let color_assignments = C::from(coloring);
-
         log::info!("Color structure construction complete");
         SingleColoredKmers::<L, C> {
-            sbwt, lcs: lcs_index, features: FeatureSet { color_assignments, hierarchy },
+            sbwt, lcs: lcs_index, features: feature_set,
         }
     }
 
@@ -821,7 +831,7 @@ mod tests {
             .collect();
 
         let index: SingleColoredKmers<LcsWrapper, SimpleColorStorage> =
-            SingleColoredKmers::new(sbwt, lcs, streams, 1, hierarchy);
+            SingleColoredKmers::new(sbwt, lcs, streams, 1, hierarchy, "feature_set_name");
 
         // Sequential reference: run the simple single-threaded loop
         let (_, lcs_seq, mut colors_seq, hierarchy_seq) = index.clone().into_parts();
