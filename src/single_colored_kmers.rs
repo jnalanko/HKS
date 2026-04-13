@@ -87,6 +87,25 @@ impl ColorHierarchy {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FeatureSet<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
+    pub color_assignments: C,
+    pub hierarchy: ColorHierarchy,
+}
+
+impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> FeatureSet<C> {
+    pub fn serialize(&self, out: &mut impl Write) {
+        self.color_assignments.serialize(out);
+        self.hierarchy.serialize(out);
+    }
+
+    pub fn load(input: &mut impl Read) -> Self {
+        let color_assignments = *C::load(input);
+        let hierarchy = ColorHierarchy::load(input);
+        Self { color_assignments, hierarchy }
+    }
+}
+
 pub struct ColorStats {
     pub colored: usize,
     pub uncolored: usize,
@@ -104,8 +123,7 @@ const IS_DNA: BitArray<[u32; 8]> = bitarr![const u32, Lsb0; 0,0,0,0,0,0,0,0,0,0,
 pub struct SingleColoredKmers<L: ContractLeft + Clone + MySerialize + From<LcsArray>, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
     lcs: L,
-    colors: C,
-    hierarchy: ColorHierarchy,
+    features: FeatureSet<C>,
 }
 
 impl<L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize+ From<SimpleColorStorage>> ColoredKmerLookupAlgorithm for SingleColoredKmers<L, C> {
@@ -310,20 +328,20 @@ impl ColoringBatch {
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> SingleColoredKmers<L, C> {
 
     pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, C, ColorHierarchy) {
-        (self.sbwt, self.lcs, self.colors, self.hierarchy)
+        (self.sbwt, self.lcs, self.features.color_assignments, self.features.hierarchy)
     }
 
     /// Returns the underlying `LcaTree` from the color hierarchy.
     pub fn color_hierarchy(&self) -> &LcaTree {
-        self.hierarchy.tree()
+        self.features.hierarchy.tree()
     }
 
     pub fn color_names(&self) -> &[String] {
-        self.hierarchy.names()
+        self.features.hierarchy.names()
     }
 
     pub fn rename_labels(&mut self, new_names: Vec<String>) {
-        self.hierarchy.rename_labels(new_names);
+        self.features.hierarchy.rename_labels(new_names);
     }
 
     pub fn k(&self) -> usize {
@@ -350,9 +368,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
         self.sbwt.serialize(out).unwrap();
         self.lcs.serialize(out);
-
-        self.colors.serialize(&mut out);
-        self.hierarchy.serialize(&mut out);
+        self.features.serialize(&mut out);
     }
 
     pub fn load(mut input: &mut impl Read) -> SingleColoredKmers<L, C> {
@@ -372,15 +388,13 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
         let sbwt = SbwtIndex::<sbwt::SubsetMatrix>::load(input).unwrap();
         let lcs = *L::load(input);
+        let features = FeatureSet::<C>::load(&mut input);
 
-        let colors = *C::load(&mut input);
-        let hierarchy = ColorHierarchy::load(&mut input);
-
-        SingleColoredKmers{sbwt, lcs, colors, hierarchy}
+        SingleColoredKmers{sbwt, lcs, features}
     }
 
     pub fn n_colors_in_hierarchy(&self) -> usize {
-        self.hierarchy.n_nodes()
+        self.features.hierarchy.n_nodes()
     }
 
     pub fn n_kmers(&self) -> usize {
@@ -418,7 +432,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     pub fn color_stats(&self) -> ColorStats {
         let mut uncolored = 0_usize;
         let mut colored = 0_usize;
-        let mut color_counts = vec![0_usize; self.hierarchy.n_nodes()];
+        let mut color_counts = vec![0_usize; self.features.hierarchy.n_nodes()];
         for i in 0..self.sbwt.n_sets() {
             match self.get_color(i) {
                 Some(id) => { colored += 1; color_counts[id] += 1; },
@@ -431,12 +445,12 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     pub fn get_color(&self, colex: usize) -> Option<usize> {
         assert!(colex < self.sbwt.n_sets());
-        self.colors.get_color(colex)
+        self.features.color_assignments.get_color(colex)
     }
-    
+
     pub fn get_color_of_range(&self, colex_range: Range<usize>) -> Option<usize> {
         assert!(colex_range.end <= self.sbwt.n_sets());
-        self.colors.get_color_of_range(colex_range, self.hierarchy.tree())
+        self.features.color_assignments.get_color_of_range(colex_range, self.features.hierarchy.tree())
     }
 
     // Returns an iterator giving the color of each of the n-k+1 k-mers of the query.
@@ -620,19 +634,19 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         let lcs_index = L::from(lcs);
 
         log::info!("Building Color id wavelet tree");
-        let colors_index = C::from(coloring);
+        let color_assignments = C::from(coloring);
 
         log::info!("Color structure construction complete");
         SingleColoredKmers::<L, C> {
-            sbwt, lcs: lcs_index, colors: colors_index, hierarchy,
+            sbwt, lcs: lcs_index, features: FeatureSet { color_assignments, hierarchy },
         }
     }
 
     pub fn turn_nones_to_roots(&mut self) {
-        let root_id = self.hierarchy.root();
+        let root_id = self.features.hierarchy.root();
         for i in 0..self.sbwt.n_sets() {
             if self.get_color(i) == None {
-                self.colors.set_color(i, Some(root_id));
+                self.features.color_assignments.set_color(i, Some(root_id));
             }
         }
     }
@@ -667,13 +681,13 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                     // We must only count this if the dummy has length at least s.
                     let dummy_len = self.sbwt.access_kmer(run_start).iter().filter(|c| **c != b'$').count();
                     if dummy_len >= s {
-                        lca = self.hierarchy.tree().lca_options(lca, self.colors.get_color(run_start));
+                        lca = self.features.hierarchy.tree().lca_options(lca, self.features.color_assignments.get_color(run_start));
                     }
                 } else {
                     // Since the length of the range is at least 2, all s-mers in the range
                     // are dollar-free: otherwise we would have a duplicate dummy.
                     for pos in run_start..run_end {
-                        lca = self.hierarchy.tree().lca_options(lca, self.colors.get_color(pos));
+                        lca = self.features.hierarchy.tree().lca_options(lca, self.features.color_assignments.get_color(pos));
                     }
                 }
                 if let Some(x) = lca {
@@ -698,7 +712,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync +
         assert!(k <= inner.sbwt.k());
         if k < inner.sbwt.k() {
             log::info!("Preprocessing colors for {}-mer queries", k);
-            inner.colors.substitute_lca_for_s_mer_ranges(k, inner.hierarchy.tree(), &inner.lcs, n_threads);
+            inner.features.color_assignments.substitute_lca_for_s_mer_ranges(k, inner.features.hierarchy.tree(), &inner.lcs, n_threads);
         }
         Self { inner, k }
     }
