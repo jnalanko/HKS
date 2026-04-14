@@ -8,7 +8,7 @@ use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtInde
 use single_colored_kmers::{ColorHierarchy, HksIndex};
 use parallel_queries::OutputWriter;
 
-use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
+use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
 
 mod single_colored_kmers;
 mod lca_tree;
@@ -86,39 +86,62 @@ impl ColorIndex {
         }
     }
 
-    fn rename_labels(&mut self, new_names: Vec<String>, feature_set_name: &str) {
+    fn resolve_feature_set_id(&self, feature_set_name: Option<&str>) -> Result<usize, String> {
         match self {
-            ColorIndex::FixedK(index) => {
-                // Fetch the feature set id, if exists
-                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
-
-                index.rename_labels(new_names, feature_set_id);
-            }
+            ColorIndex::FixedK(index) => resolve_feature_set_id(index, feature_set_name),
         }
     }
 
-    fn color_stats(&self, feature_set_name: &str) -> ColorStats {
+    fn rename_labels(&mut self, new_names: Vec<String>, feature_set_name: Option<&str>) -> Result<(), String> {
+        let id = self.resolve_feature_set_id(feature_set_name)?;
         match self {
-            ColorIndex::FixedK(index) => {
-                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
-                index.color_stats(feature_set_id)
-            }
+            ColorIndex::FixedK(index) => index.rename_labels(new_names, id),
+        }
+        Ok(())
+    }
+
+    fn color_stats(&self, feature_set_name: Option<&str>) -> Result<ColorStats, String> {
+        let id = self.resolve_feature_set_id(feature_set_name)?;
+        match self {
+            ColorIndex::FixedK(index) => Ok(index.color_stats(id)),
         }
     }
 
-    fn color_names(&self, feature_set_name: &str) -> &[String] {
+    fn color_names(&self, feature_set_name: Option<&str>) -> Result<&[String], String> {
+        let id = self.resolve_feature_set_id(feature_set_name)?;
         match self {
-            ColorIndex::FixedK(index) => {
-                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
-                index.feature_sets()[feature_set_id].hierarchy.names()
-            }
+            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.names()),
         }
     }
 
-    fn get_feature_set_id(&self, feature_set_name: &str) -> Option<usize> {
+    fn color_hierarchy(&self, feature_set_name: Option<&str>) -> Result<&LcaTree, String> {
+        let id = self.resolve_feature_set_id(feature_set_name)?;
         match self {
-            ColorIndex::FixedK(index) => index.get_feature_set_id(feature_set_name),
+            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.tree()),
         }
+    }
+
+    fn n_colors_in_hierarchy(&self, feature_set_name: Option<&str>) -> Result<usize, String> {
+        let id = self.resolve_feature_set_id(feature_set_name)?;
+        match self {
+            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.n_nodes()),
+        }
+    }
+}
+
+/// Resolve a feature set name (if given) to its id. If no name is given and the index
+/// contains exactly one feature set, returns id 0. Errors if the name is not found, or
+/// if multiple feature sets exist and no name is given. Logs the available feature sets.
+fn resolve_feature_set_id(index: &FixedKColorIndex, feature_set_name: Option<&str>) -> Result<usize, String> {
+    let names: Vec<&str> = index.feature_sets().iter().map(|fs| fs.name.as_str()).collect();
+    log::info!("Available feature sets in index: {}", names.join(", "));
+    if let Some(name) = feature_set_name {
+        index.get_feature_set_id(name)
+            .ok_or_else(|| format!("Feature set name {} not found in index.", name))
+    } else if index.feature_sets().len() > 1 {
+        Err("Multiple feature sets in index but no feature set specified (use --feature-set)".to_string())
+    } else {
+        Ok(0)
     }
 }
 
@@ -292,6 +315,9 @@ pub enum Subcommands {
     Stats {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
+        feature_set: Option<String>,
     },
 
     #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= k <= s")]
@@ -304,12 +330,18 @@ pub enum Subcommands {
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
+
+        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
+        feature_set: Option<String>,
     },
 
     #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line (ids 0,1,2...), then all edges as space-separated child parent pairs, one per line.")]
     PrintHierarchy {
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
+        feature_set: Option<String>,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -319,6 +351,9 @@ pub enum Subcommands {
 
         #[arg(help = "Path to the index file", short, long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "The name of the feature set to query. Required only if the index contains more than one feature set.", long)]
+        feature_set: Option<String>,
     },
 
     // Outdated from the time there could be only one feature set in the index
@@ -412,10 +447,16 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
 }
 
-fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs, color_names: Option<&[String]>) -> Result<(), String> {
+fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs) -> Result<(), String> {
     let k = index.query_k();
+    let feature_set_id = resolve_feature_set_id(index.inner(), args.feature_set.as_deref())?;
+
     let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
-    let color_names = if args.report_label_ids { None } else { color_names.map(|name| name.to_vec()) };
+    let color_names: Option<Vec<String>> = if args.report_label_ids {
+        None
+    } else {
+        Some(index.inner().feature_sets()[feature_set_id].hierarchy.names().to_vec())
+    };
     let reader = open_fastx(&args.query)?;
 
     // A dynamic writer is fine performance-wise because it's wapped in a buffered writer.
@@ -426,17 +467,6 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
     };
     let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
 
-    let feature_set_names: Vec<String> = index.inner().feature_sets().iter().map(|fs| fs.name.clone()).collect();
-    log::info!("Available feature sets in index: {}", feature_set_names.join(", "));
-    let feature_set_id = if let Some(ref name) = args.feature_set {
-        index.inner().get_feature_set_id(name).ok_or_else(|| format!("Feature set name {} not found in index.", name))?
-    } else {
-        if index.inner().feature_sets().len() > 1 {
-            return Err("Multiple feature sets in index but no feature set specified in query arguments".to_string());
-        }
-        0 // The only feature set
-    };
-
     let algo = LookupAlgorithmForFeatureSet{index: &index, feature_set_id};
 
     log::info!("Running queries from {} ...", args.query.display());
@@ -444,7 +474,7 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
     Ok(())
 }
 
-fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize, color_names: &[String]) {
+fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize) {
     let stdin = std::io::stdin();
     let mut line = String::new();
     eprintln!("To run a query, type `-q example/query.fasta -o out.tsv` and press enter.");
@@ -461,17 +491,17 @@ fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize, color_names: &[St
         if matches!(trimmed, "quit" | "exit" | "q") { break; }
         let tokens = std::iter::once("prompt").chain(trimmed.split_whitespace());
         match LookupQueryArgs::try_parse_from(tokens) {
-            Ok(args) => if let Err(e) = run_lookup_with_args(index, n_threads, &args, Some(color_names)) { eprintln!("Error: {e}"); },
+            Ok(args) => if let Err(e) = run_lookup_with_args(index, n_threads, &args) { eprintln!("Error: {e}"); },
             Err(e) => eprintln!("{e}"),
         }
     }
 }
 
-fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize, feature_set_name: &str) {
+fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize, feature_set_name: Option<&str>) {
     use rayon::prelude::*;
 
-    let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
-    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names(feature_set_name).to_vec());
+    let feature_set_id = index.resolve_feature_set_id(feature_set_name).unwrap_or_else(|e| panic!("{e}"));
+    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names(feature_set_name).unwrap().to_vec());
     let ColorIndex::FixedK(mut index) = index;
     let k = index.k();
 
@@ -758,12 +788,10 @@ fn main() {
                 panic!("Error: query k = {} larger than indexing s = {}", k, index_inner.k());
             }
 
-            let color_names = index_inner.color_names().to_vec();
-
             let n_threads = n_threads as usize;
             // Constructor does extra preprocessing if k < index_inner.k()
             let index = ShortKColorIndex::new(index_inner, k, n_threads);
-            run_lookup_with_args(&index, n_threads, &query_args, Some(&color_names)).unwrap_or_else(|e| panic!("{e}"));
+            run_lookup_with_args(&index, n_threads, &query_args).unwrap_or_else(|e| panic!("{e}"));
         },
 
         Subcommands::Prompt { index: index_path, k, n_threads } => {
@@ -781,23 +809,22 @@ fn main() {
                 panic!("Error: query k = {} larger than indexing s = {}", session_k, index_inner.k());
             }
 
-            let color_names = index_inner.color_names().to_vec();
-
             let n_threads = n_threads as usize;
             // Constructor does extra preprocessing if session_k < index_inner.k()
             let index = ShortKColorIndex::new(index_inner, session_k, n_threads);
-            run_prompt_loop(&index, n_threads, &color_names);
+            run_prompt_loop(&index, n_threads);
         },
 
-        Subcommands::Stats { index: index_path } => {
+        Subcommands::Stats { index: index_path, feature_set } => {
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
 
-            let stats = index.color_stats();
+            let fs_name = feature_set.as_deref();
+            let stats = index.color_stats(fs_name).unwrap_or_else(|e| panic!("{e}"));
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
-            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy());
+            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy(fs_name).unwrap_or_else(|e| panic!("{e}")));
             println!("Number of k-mers:      {}", index.n_kmers());
             println!("Labeled SBWT positions: {}", stats.colored);
             println!("Unlabeled SBWT positions:  {}", stats.uncolored);
@@ -807,24 +834,25 @@ fn main() {
             println!();
             println!("{:<10}  {}", "Count", "Label name");
             println!("{:<10}  {}", stats.uncolored, "none");
-            for (id, name) in index.color_names().iter().enumerate() {
+            for (id, name) in index.color_names(fs_name).unwrap_or_else(|e| panic!("{e}")).iter().enumerate() {
                 println!("{:<10}  {}", stats.color_counts[id], name);
             }
         },
 
-        Subcommands::NodeStats { index: index_path, report_color_ids, n_threads } => {
+        Subcommands::NodeStats { index: index_path, report_color_ids, n_threads, feature_set } => {
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
-            compute_node_stats(index, !report_color_ids, n_threads);
+            compute_node_stats(index, !report_color_ids, n_threads, feature_set.as_deref());
         },
 
-        Subcommands::PrintHierarchy { index: index_path } => {
+        Subcommands::PrintHierarchy { index: index_path, feature_set } => {
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
             let index = ColorIndex::load(&mut index_input);
-            let names = index.color_names();
-            let tree = index.color_hierarchy();
+            let fs_name = feature_set.as_deref();
+            let names = index.color_names(fs_name).unwrap_or_else(|e| panic!("{e}"));
+            let tree = index.color_hierarchy(fs_name).unwrap_or_else(|e| panic!("{e}"));
             let n = tree.n_nodes();
             println!("{}", n);
             for name in names {
@@ -837,7 +865,7 @@ fn main() {
             }
         },
 
-        Subcommands::LookupDebug{query: query_path, index: index_path} => {
+        Subcommands::LookupDebug{query: query_path, index: index_path, feature_set} => {
             log::info!("Loading the index ...");
             let mut index_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -847,9 +875,10 @@ fn main() {
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
             log::info!("Running query debug implementation for {} ...", query_path.display());
 
+            let feature_set_id = index.resolve_feature_set_id(feature_set.as_deref()).unwrap_or_else(|e| panic!("{e}"));
             match index {
                 ColorIndex::FixedK(index) => {
-                    single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k());
+                    single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k(), feature_set_id);
                 },
             }
         }
