@@ -29,11 +29,15 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         self.feature_sets.iter().position(|fs| fs.name == feature_set_name)
     }
 
+    pub fn feature_sets(&self) -> &[FeatureSet<C>] {
+        &self.feature_sets
+    }
+
     pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, Vec<FeatureSet<C>>) {
         (self.sbwt, self.lcs, self.feature_sets)
     }
 
-    pub fn rename_labels(&mut self, feature_set_id: usize, new_names: Vec<String>) {
+    pub fn rename_labels(&mut self, new_names: Vec<String>, feature_set_id: usize) {
         self.feature_sets[feature_set_id].hierarchy.rename_labels(new_names);
     }
 

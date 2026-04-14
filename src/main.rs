@@ -80,45 +80,44 @@ impl ColorIndex {
         }
     }
 
-    fn color_names(&self) -> &[String] {
-        match self {
-            ColorIndex::FixedK(index) => index.color_names(),
-        }
-    }
-
-    fn n_colors_in_hierarchy(&self) -> usize {
-        match self {
-            ColorIndex::FixedK(index) => index.n_colors_in_hierarchy(),
-        }
-    }
-
-    fn root_id(&self) -> usize {
-        match self {
-            ColorIndex::FixedK(index) => index.color_hierarchy().root(),
-        }
-    }
-
-    fn color_hierarchy(&self) -> &crate::lca_tree::LcaTree {
-        match self {
-            ColorIndex::FixedK(index) => index.color_hierarchy(),
-        }
-    }
-
     fn n_kmers(&self) -> usize {
         match self {
             ColorIndex::FixedK(index) => index.n_kmers(),
         }
     }
 
-    fn rename_labels(&mut self, new_names: Vec<String>) {
+    fn rename_labels(&mut self, new_names: Vec<String>, feature_set_name: &str) {
         match self {
-            ColorIndex::FixedK(index) => index.rename_labels(new_names),
+            ColorIndex::FixedK(index) => {
+                // Fetch the feature set id, if exists
+                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
+
+                index.rename_labels(new_names, feature_set_id);
+            }
         }
     }
 
-    fn color_stats(&self) -> ColorStats {
+    fn color_stats(&self, feature_set_name: &str) -> ColorStats {
         match self {
-            ColorIndex::FixedK(index) => index.color_stats(),
+            ColorIndex::FixedK(index) => {
+                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
+                index.color_stats(feature_set_id)
+            }
+        }
+    }
+
+    fn color_names(&self, feature_set_name: &str) -> &[String] {
+        match self {
+            ColorIndex::FixedK(index) => {
+                let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
+                index.feature_sets()[feature_set_id].hierarchy.names()
+            }
+        }
+    }
+
+    fn get_feature_set_id(&self, feature_set_name: &str) -> Option<usize> {
+        match self {
+            ColorIndex::FixedK(index) => index.get_feature_set_id(feature_set_name),
         }
     }
 }
@@ -322,6 +321,8 @@ pub enum Subcommands {
         index: PathBuf,
     },
 
+    // Outdated from the time there could be only one feature set in the index
+    /*
     #[command(arg_required_else_help = true, hide = true, about = "Rename labels in an index file.")]
     RenameLabels {
         #[arg(help = "Path to the index file", short, long, required = true)]
@@ -336,6 +337,7 @@ pub enum Subcommands {
         #[arg(help = "If set, the first column of the new-names file is interpreted as the current label name instead of the internal id.", long = "names-to-names")]
         names_to_names: bool,
     },
+    */
 
 }
 
@@ -361,6 +363,9 @@ pub struct LookupQueryArgs {
 
     #[arg(help = "Output file. Defaults to stdout.", short, long)]
     output: Option<PathBuf>,
+
+    #[arg(help = "The name of the feature set to query. If the index contains multiple feature sets, this must be specified to disambiguate. If the index only contains one feature set, this can be left out.", long)]
+    feature_set: Option<String>,
 }
 
 struct DynamicFastXReaderWrapper {
@@ -391,6 +396,17 @@ fn load_seq_names(query_path: &PathBuf) -> Result<Vec<String>, String> {
     Ok(seq_names)
 }
 
+struct LookupAlgorithmForFeatureSet<'a> {
+    index: &'a ShortKColorIndex,
+    feature_set_id: usize,
+}
+
+impl<'a> ColoredKmerLookupAlgorithm for LookupAlgorithmForFeatureSet<'a> {
+    fn lookup_kmers(&self, query: &[u8], k: usize) -> impl Iterator<Item = Option<usize>> {
+        self.index.inner().lookup_kmers(query, k, self.feature_set_id)
+    }
+}
+
 fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_threads: usize, reader: DynamicFastXReader, index: &A, batch_size: usize, k: usize, writer: W) {
     let reader = DynamicFastXReaderWrapper { inner: reader };
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
@@ -409,8 +425,22 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
         Box::new(std::io::stdout())
     };
     let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
+
+    let feature_set_names: Vec<String> = index.inner().feature_sets().iter().map(|fs| fs.name.clone()).collect();
+    log::info!("Available feature sets in index: {}", feature_set_names.join(", "));
+    let feature_set_id = if let Some(ref name) = args.feature_set {
+        index.inner().get_feature_set_id(name).ok_or_else(|| format!("Feature set name {} not found in index.", name))?
+    } else {
+        if index.inner().feature_sets().len() > 1 {
+            return Err("Multiple feature sets in index but no feature set specified in query arguments".to_string());
+        }
+        0 // The only feature set
+    };
+
+    let algo = LookupAlgorithmForFeatureSet{index: &index, feature_set_id};
+
     log::info!("Running queries from {} ...", args.query.display());
-    run_queries(n_threads, reader, index, args.batch_size as usize, k, writer);
+    run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
     Ok(())
 }
 
@@ -437,10 +467,11 @@ fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize, color_names: &[St
     }
 }
 
-fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize) {
+fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize, feature_set_name: &str) {
     use rayon::prelude::*;
 
-    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names().to_vec());
+    let feature_set_id = index.get_feature_set_id(feature_set_name).expect(&format!("Feature set name {} not found in index", feature_set_name));
+    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names(feature_set_name).to_vec());
     let ColorIndex::FixedK(mut index) = index;
     let k = index.k();
 
@@ -457,7 +488,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
         let k_values: Vec<usize> = (1..=k).rev().collect(); // Need to collect because par_iter does not take rev()
         k_values.into_par_iter().for_each(|s| {
             log::info!("Computing node stats for s = {}", s);
-            let counts = index.node_stats(s, &dummy_marks);
+            let counts = index.node_stats(s, &dummy_marks, feature_set_id);
             let mut out = String::new();
             for color in 0..counts.len() {
                 let color_label = if let Some(ref names) = color_names {
@@ -474,6 +505,8 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     });
 }
 
+// Outdated: this is from the time when there could be only 1 feature set in the index
+/*
 fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &PathBuf, names_to_names: bool) {
     let mut index_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
@@ -523,6 +556,7 @@ fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &Path
         .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", out_path.display())));
     index.serialize(&mut out);
 }
+*/
 
 // Load SBWT and LCS, or build from scratch if not given
 fn save_sbwt_and_lcs_if_requested(sbwt: &SbwtIndexVariant, lcs: &LcsArray, prefix: &Option<PathBuf>) {
@@ -801,10 +835,6 @@ fn main() {
                     println!("{} {}", names[node], names[tree.parent(node)]);
                 }
             }
-        },
-
-        Subcommands::RenameLabels { index: index_path, new_names: new_names_path, output: out_path, names_to_names } => {
-            rename_labels(&index_path, &new_names_path, &out_path, names_to_names);
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path} => {
