@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
 use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SbwtIndexVariant, SubsetMatrix, write_sbwt_index_variant};
-use single_colored_kmers::{ColorHierarchy, SingleColoredKmers};
+use single_colored_kmers::{ColorHierarchy, HksIndex};
 use parallel_queries::OutputWriter;
 
 use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
@@ -21,7 +21,7 @@ mod wavelet_tree;
 mod traits;
 mod color_storage;
 
-type FixedKColorIndex = SingleColoredKmers<LcsWrapper, SimpleColorStorage>;
+type FixedKColorIndex = HksIndex<LcsWrapper, SimpleColorStorage>;
 type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
 
 enum ColorIndex { // For now just one variant, might add more later
@@ -194,15 +194,9 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     n_threads: usize,
     out_path: PathBuf,
     hierarchy: ColorHierarchy,
-    nones_to_multiples: bool,
 ) {
     log::info!("Marking colors");
-    let mut index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, "unnamed");
-    if nones_to_multiples {
-        log::info!("Turning Nones into roots");
-        index.turn_nones_to_roots();
-    }
-
+    let index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, "unnamed");
     let index = ColorIndex::FixedK(index);
 
     log::info!("Writing to {}", out_path.display());
@@ -261,9 +255,6 @@ pub enum Subcommands {
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
-
-        #[arg(help = "Hidden option: After building, turn all \"none\" labels into \"multiple\"", long = "none-to-multiple", default_value = "false", hide = true)]
-        none_to_multiple: bool,
 
         #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
         sbwt_and_lcs_save_prefix: Option<PathBuf>,
@@ -677,7 +668,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, none_to_multiple, sbwt_and_lcs_save_prefix} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, sbwt_and_lcs_save_prefix} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -705,7 +696,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
@@ -713,7 +704,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, none_to_multiple);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy);
             }
 
         },

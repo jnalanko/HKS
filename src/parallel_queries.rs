@@ -343,7 +343,7 @@ mod tests {
     use rand_chacha::rand_core::{RngCore, SeedableRng};
     use sbwt::{BitPackedKmerSortingMem, SeqStream};
 
-    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, LcsWrapper, SingleColoredKmers}};
+    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, LcsWrapper, HksIndex}};
 
     struct SingleSeqStream {
         seq: Vec<u8>,
@@ -453,7 +453,7 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
+        let sck = HksIndex::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
         eprintln!("SingleColoredKmers built");
 
         // Generate 1000 random queries of lengths between 1 and 100
@@ -577,7 +577,7 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
+        let sck = HksIndex::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
         eprintln!("SingleColoredKmers built");
 
         // Generate random queries of lengths between 1 and 50
@@ -658,7 +658,7 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter()
             .map(|s| SingleSeqStream::new(s.clone()))
             .collect();
-        let original = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(
+        let original = HksIndex::<LcsWrapper, SimpleColorStorage>::new(
             sbwt, lcs, seqstreams, 1, ColorHierarchy::new_star(color_names), "unnamed"
         );
 
@@ -667,7 +667,7 @@ mod tests {
         original.serialize(&mut buf);
 
         // Deserialize
-        let loaded = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::load(&mut buf.as_slice());
+        let loaded = HksIndex::<LcsWrapper, SimpleColorStorage>::load(&mut buf.as_slice());
 
         // Check structural equality
         assert_eq!(original.k(), loaded.k());
