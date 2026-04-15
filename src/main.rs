@@ -13,6 +13,7 @@ use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queri
 mod single_colored_kmers;
 mod lca_tree;
 mod lca_support;
+mod priority_lca;
 mod io;
 mod parallel_queries;
 mod single_threaded_queries;

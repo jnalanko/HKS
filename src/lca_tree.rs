@@ -111,6 +111,12 @@ impl LcaTree {
         self.parent[node]
     }
 
+    /// Returns the depth of `node` (root has depth 0).
+    #[inline]
+    pub fn depth(&self, node: usize) -> usize {
+        self.lca_support.depth(node)
+    }
+
     // --- Serialization ---
 
     /// Write the tree to `w` in a simple binary format:
