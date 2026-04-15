@@ -11,6 +11,7 @@ use jseqio::seq_db::SeqDB;
 use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStream, StreamingIndex, SubsetMatrix};
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
+use crate::priority_lca::PriorityLca;
 use crate::traits::*;
 
 #[derive(Debug, Clone)]
@@ -210,7 +211,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
 
     // Generic function that works on any of u8, 16, u32 and u64
-    fn mark_colors<T: SeqStream + Send, A: AtomicColorVec + Send + Sync, CL: ContractLeft + Sync>(sbwt: &sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: &CL, input_streams: Vec<T>, n_threads: usize, color_hierarchy: &LcaTree) -> SimpleColorStorage {
+    fn mark_colors<T: SeqStream + Send, A: AtomicColorVec + Send + Sync, CL: ContractLeft + Sync, F: Fn(usize, usize) -> usize + Sync>(sbwt: &sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: &CL, input_streams: Vec<T>, n_threads: usize, color_hierarchy: &LcaTree, merge: &F) -> SimpleColorStorage {
 
         let color_ids = A::new(sbwt.n_sets());
         let si = StreamingIndex {
@@ -286,7 +287,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                 let color_ids_ref = &color_ids; // Moved into worker
                 worker_handles.push(scope.spawn(move || {
                     while let Ok(batch) = batch_recv_clone.recv() {
-                        batch.run(si_ref, color_ids_ref, n_bases_processed_ref, color_hierarchy);
+                        batch.run(si_ref, color_ids_ref, n_bases_processed_ref, merge);
                     }
                 }));
             }
@@ -324,19 +325,51 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     }
 
+    /// Thin dispatcher that picks the atomic int width for the color vector
+    /// and calls `mark_colors`. Extracted so the per-closure monomorphization
+    /// of `mark_colors` lives in one place.
+    fn mark_colors_dispatch<T: SeqStream + Send, CL: ContractLeft + Sync, F: Fn(usize, usize) -> usize + Sync>(
+        sbwt: &sbwt::SbwtIndex<sbwt::SubsetMatrix>,
+        lcs: &CL,
+        input_streams: Vec<T>,
+        n_threads: usize,
+        required_bit_width: usize,
+        color_hierarchy: &LcaTree,
+        merge: &F,
+    ) -> SimpleColorStorage {
+        if required_bit_width <= 8 {
+            Self::mark_colors::<T, Vec::<AtomicU8>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        } else if required_bit_width <= 16 {
+            Self::mark_colors::<T, Vec::<AtomicU16>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        } else if required_bit_width <= 32 {
+            Self::mark_colors::<T, Vec::<AtomicU32>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        } else {
+            Self::mark_colors::<T, Vec::<AtomicU64>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        }
+    }
+
 
     pub fn new<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy, feature_set_name: &str) -> Self {
+        Self::new_with_priorities(sbwt, lcs, input_streams, n_threads, hierarchy, feature_set_name, None)
+    }
+
+    /// Same as [`new`], but allows supplying per-node priorities to enable
+    /// priority-aware LCA during construction. The priorities are used only
+    /// for the merge fold; they are not stored in the resulting index.
+    pub fn new_with_priorities<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy, feature_set_name: &str, priorities: Option<Vec<usize>>) -> Self {
         let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1); // +1 for the "none"
 
+        let tree = hierarchy.tree();
         log::info!("Marking colors");
-        let color_storage = if required_bit_width <= 8 {
-            HksIndex::<L,C>::mark_colors::<T, Vec::<AtomicU8>, LcsArray>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
-        } else if required_bit_width <= 16 {
-            HksIndex::<L,C>::mark_colors::<T, Vec::<AtomicU16>, LcsArray>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
-        } else if required_bit_width <= 32 {
-            HksIndex::<L,C>::mark_colors::<T, Vec::<AtomicU32>, LcsArray>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
-        } else {
-            HksIndex::<L,C>::mark_colors::<T, Vec::<AtomicU64>, LcsArray>(&sbwt, &lcs, input_streams, n_threads, hierarchy.tree())
+        let color_storage = match priorities {
+            Some(p) => {
+                let plca = PriorityLca::new(tree, p)
+                    .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
+                HksIndex::<L,C>::mark_colors_dispatch::<T, LcsArray, _>(&sbwt, &lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| plca.plca(a, b))
+            }
+            None => {
+                HksIndex::<L,C>::mark_colors_dispatch::<T, LcsArray, _>(&sbwt, &lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| tree.lca(a, b))
+            }
         };
 
         log::info!("Indexing color id array");
@@ -365,21 +398,37 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     where
         L: Sync,
     {
+        self.add_feature_set_with_priorities(input_streams, n_threads, hierarchy, feature_set_name, None)
+    }
+
+    pub fn add_feature_set_with_priorities<T: SeqStream + Send>(
+        &mut self,
+        input_streams: Vec<T>,
+        n_threads: usize,
+        hierarchy: ColorHierarchy,
+        feature_set_name: &str,
+        priorities: Option<Vec<usize>>,
+    ) -> Result<(), String>
+    where
+        L: Sync,
+    {
         if self.feature_sets.iter().any(|fs| fs.name == feature_set_name) {
             return Err(format!("Feature set name \"{}\" already exists in index", feature_set_name));
         }
 
         let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1);
 
+        let tree = hierarchy.tree();
         log::info!("Marking colors");
-        let color_storage = if required_bit_width <= 8 {
-            Self::mark_colors::<T, Vec::<AtomicU8>, L>(&self.sbwt, &self.lcs, input_streams, n_threads, hierarchy.tree())
-        } else if required_bit_width <= 16 {
-            Self::mark_colors::<T, Vec::<AtomicU16>, L>(&self.sbwt, &self.lcs, input_streams, n_threads, hierarchy.tree())
-        } else if required_bit_width <= 32 {
-            Self::mark_colors::<T, Vec::<AtomicU32>, L>(&self.sbwt, &self.lcs, input_streams, n_threads, hierarchy.tree())
-        } else {
-            Self::mark_colors::<T, Vec::<AtomicU64>, L>(&self.sbwt, &self.lcs, input_streams, n_threads, hierarchy.tree())
+        let color_storage = match priorities {
+            Some(p) => {
+                let plca = PriorityLca::new(tree, p)
+                    .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
+                Self::mark_colors_dispatch::<T, L, _>(&self.sbwt, &self.lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| plca.plca(a, b))
+            }
+            None => {
+                Self::mark_colors_dispatch::<T, L, _>(&self.sbwt, &self.lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| tree.lca(a, b))
+            }
         };
 
         log::info!("Indexing color id array");
@@ -616,13 +665,13 @@ impl<T: AtomicUint> AtomicColorVec for Vec<T> {
         (0..len).map(|_| T::new(T::max_value())).collect()
     }
 
-    fn update(&self, i: usize, x: usize, lca: &LcaTree) {
+    fn update<F: Fn(usize, usize) -> usize>(&self, i: usize, x: usize, merge: &F) {
         assert!(x != Self::none_sentinel(), "x must not be the none sentinel");
         self[i].fetch_update(|cur| {
             if cur == Self::none_sentinel() {
-                x               // first assignment: replace none with color
+                x              // first assignment: replace none with color
             } else {
-                lca.lca(cur, x) // subsequent: merge via LCA
+                merge(cur, x)  // subsequent: merge two colors (standard or priority-aware LCA)
             }
         });
     }
@@ -696,7 +745,7 @@ impl ColoringBatch {
         self.total_len += mer.len();
     }
 
-    fn run<V: AtomicColorVec, CL: ContractLeft>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, lca_tree: &LcaTree) {
+    fn run<V: AtomicColorVec, CL: ContractLeft, F: Fn(usize, usize) -> usize>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, merge: &F) {
         let k = si.k;
         let mut thread_progress = 0_usize;
 
@@ -708,7 +757,7 @@ impl ColoringBatch {
                 ms.enumerate().for_each(|(i, (len, range))| {
                     if len == k {
                         debug_assert!(range.len() == 1); // Full k-mer should have a singleton range
-                        color_ids.update(range.start, *color, lca_tree);
+                        color_ids.update(range.start, *color, merge);
                     } else if cfg!(debug_assertions) && i >= k-1 {
                         // All valid k-mers should be found. If we're here, the k-mer must have had non-ACGT
                         // characters which make it invalid. Let's verify that.
@@ -742,7 +791,7 @@ impl ColoringBatch {
                     // will correspond to a dummy node. We could add a check for this
                     // but it's expensive.
                     let colex = range.start;
-                    color_ids.update(colex, *color, lca_tree);
+                    color_ids.update(colex, *color, merge);
                 });
             }
         }

@@ -212,6 +212,56 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca
     (tree, all_names)
 }
 
+/// Parse a node-priority file of the form
+///
+/// ```text
+/// node_name  priority
+/// ```
+///
+/// one entry per line, tokens separated by whitespace. Returns a vector of
+/// priorities indexed by node id (same ordering as `node_names`). Every node
+/// in `node_names` must appear exactly once; unknown names and duplicates
+/// are errors.
+fn parse_node_priorities(path: &Path, node_names: &[String]) -> Result<Vec<usize>, String> {
+    let file = File::open(path).map_err(|e| format!("Could not open priorities file {}: {e}", path.display()))?;
+    let name_to_id: HashMap<&str, usize> = node_names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+
+    let mut priorities: Vec<Option<usize>> = vec![None; node_names.len()];
+    for (lineno, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|e| format!("Error reading {}:{}: {e}", path.display(), lineno + 1))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut toks = trimmed.split_whitespace();
+        let name = toks.next().ok_or_else(|| format!("{}:{}: missing node name", path.display(), lineno + 1))?;
+        let pri_tok = toks.next().ok_or_else(|| format!("{}:{}: missing priority for node {name}", path.display(), lineno + 1))?;
+        if toks.next().is_some() {
+            return Err(format!("{}:{}: expected exactly two tokens", path.display(), lineno + 1));
+        }
+        let pri: usize = pri_tok.parse().map_err(|e| format!("{}:{}: invalid priority {pri_tok:?}: {e}", path.display(), lineno + 1))?;
+        let id = *name_to_id.get(name).ok_or_else(|| format!("{}:{}: unknown node name {name:?}", path.display(), lineno + 1))?;
+        if priorities[id].is_some() {
+            return Err(format!("{}:{}: duplicate priority for node {name:?}", path.display(), lineno + 1));
+        }
+        priorities[id] = Some(pri);
+    }
+
+    let missing: Vec<&str> = priorities.iter().enumerate()
+        .filter_map(|(i, p)| if p.is_none() { Some(node_names[i].as_str()) } else { None })
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "Priority file {} is missing {} node(s): [{}]",
+            path.display(),
+            missing.len(),
+            missing.join(", ")
+        ));
+    }
+
+    Ok(priorities.into_iter().map(|p| p.unwrap()).collect())
+}
+
 fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>) -> ColorHierarchy {
     if let Some(path) = hierarchy_path {
         let (tree, all_names) = read_hierarchy_file(path, &provided_names);
@@ -230,9 +280,10 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     out_path: PathBuf,
     hierarchy: ColorHierarchy,
     feature_set_name: &str,
+    priorities: Option<Vec<usize>>,
 ) {
     log::info!("Marking colors");
-    let index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name);
+    let index = FixedKColorIndex::new_with_priorities(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name, priorities);
     let index = ColorIndex::FixedK(index);
 
     log::info!("Writing to {}", out_path.display());
@@ -291,6 +342,9 @@ pub enum Subcommands {
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file assigning an integer priority to every node in the hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of labels in the hierarchy.", long = "node-priorities", help_heading = "Input")]
+        node_priorities: Option<PathBuf>,
 
         #[arg(help = "Name for the feature set", long = "feature-set-name", help_heading = "Input", default_value = "unnamed")]
         feature_set_name: String,
@@ -779,7 +833,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -803,19 +857,21 @@ fn main() {
                 // TODO: most of this code is duplicated in the else-branch. Refactor to extract the shared logic.
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
                 let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name, priorities);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
                 let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name, priorities);
             }
 
         },

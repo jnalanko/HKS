@@ -28,7 +28,7 @@ pub trait AtomicColorVec{
     // Represents None as the max value of the atomic type
 
     fn new(len: usize) -> Self; // Stores a None (=max_value()) to each position
-    fn update(&self, i: usize, x: usize, lca: &LcaTree);
+    fn update<F: Fn(usize, usize) -> usize>(&self, i: usize, x: usize, merge: &F);
     fn read(&self, i: usize) -> Option<usize>;
     fn none_sentinel() -> usize;        // the value used to represent "no color assigned"
 }
