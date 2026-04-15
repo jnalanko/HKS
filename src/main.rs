@@ -368,10 +368,10 @@ pub enum Subcommands {
         #[arg(help = "Output filename for the updated index. Defaults to updating --index in place.", short, long)]
         output: Option<PathBuf>,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per label", long, help_heading = "Input", conflicts_with = "label_by_seq")]
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label. All k-mers in these files must already be present in the index.", long, help_heading = "Input", conflicts_with = "label_by_seq")]
         label_by_file: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "label_by_file")]
+        #[arg(help = "Give input as a single FASTA file, one sequence per label. All k-mers in this file must already be present in the index.", long, help_heading = "Input", conflicts_with = "label_by_file")]
         label_by_seq: Option<PathBuf>,
 
         #[arg(help = "Optional: a file with one label name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as labels. The label \"none\" is reserved.", long = "labels", help_heading = "Input")]
