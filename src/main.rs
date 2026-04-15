@@ -121,6 +121,18 @@ impl ColorIndex {
         }
     }
 
+    fn add_feature_set<T: sbwt::SeqStream + Send>(
+        &mut self,
+        input_streams: Vec<T>,
+        n_threads: usize,
+        hierarchy: ColorHierarchy,
+        feature_set_name: &str,
+    ) -> Result<(), String> {
+        match self {
+            ColorIndex::FixedK(index) => index.add_feature_set(input_streams, n_threads, hierarchy, feature_set_name),
+        }
+    }
+
     fn n_colors_in_hierarchy(&self, feature_set_name: Option<&str>) -> Result<usize, String> {
         let id = self.resolve_feature_set_id(feature_set_name)?;
         match self {
@@ -346,6 +358,36 @@ pub enum Subcommands {
 
         #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
         feature_set: Option<String>,
+    },
+
+    #[command(arg_required_else_help = true, about = "Add a new feature set to an existing index.")]
+    AddFeatureSet {
+        #[arg(help = "Path to the existing index file", short, long, required = true)]
+        index: PathBuf,
+
+        #[arg(help = "Output filename for the updated index. Defaults to updating --index in place.", short, long)]
+        output: Option<PathBuf>,
+
+        #[arg(help = "A file with one fasta/fastq filename per line, one per label", long, help_heading = "Input", conflicts_with = "label_by_seq")]
+        label_by_file: Option<PathBuf>,
+
+        #[arg(help = "Give input as a single FASTA file, one sequence per label", long, help_heading = "Input", conflicts_with = "label_by_file")]
+        label_by_seq: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as labels. The label \"none\" is reserved.", long = "labels", help_heading = "Input")]
+        labels: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
+        hierarchy: Option<PathBuf>,
+
+        #[arg(help = "Name for the new feature set. Must not collide with an existing feature set name in the index.", long = "feature-set-name", required = true)]
+        feature_set_name: String,
+
+        #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
+        forward_only: bool,
+
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -867,6 +909,43 @@ fn main() {
                     println!("{} {}", names[node], names[tree.parent(node)]);
                 }
             }
+        },
+
+        Subcommands::AddFeatureSet { index: index_path, output, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, forward_only, n_threads } => {
+            let out_path = output.unwrap_or_else(|| index_path.clone());
+            if label_by_file.is_none() && label_by_seq.is_none() {
+                panic!("Error: one of --label-by-file or --label-by-seq is required");
+            }
+
+            let n_threads = n_threads as usize;
+            let add_rev_comps = !forward_only;
+
+            log::info!("Loading the index ...");
+            let mut index_input = BufReader::new(File::open(&index_path)
+                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+            let mut index = ColorIndex::load(&mut index_input);
+            // Release the read handle before potentially reopening the same path for writing
+            drop(index_input);
+
+            if let Some(fof) = label_by_file {
+                let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name)
+                    .unwrap_or_else(|e| panic!("{e}"));
+            } else {
+                let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
+                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name)
+                    .unwrap_or_else(|e| panic!("{e}"));
+            }
+
+            if let Some(parent) = out_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+            }
+            log::info!("Writing updated index to {}", out_path.display());
+            let mut out = BufWriter::new(File::create(&out_path)
+                .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", out_path.display())));
+            index.serialize(&mut out);
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path, feature_set} => {
