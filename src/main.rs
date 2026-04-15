@@ -216,9 +216,10 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     n_threads: usize,
     out_path: PathBuf,
     hierarchy: ColorHierarchy,
+    feature_set_name: &str,
 ) {
     log::info!("Marking colors");
-    let index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, "unnamed");
+    let index = FixedKColorIndex::new(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name);
     let index = ColorIndex::FixedK(index);
 
     log::info!("Writing to {}", out_path.display());
@@ -277,6 +278,9 @@ pub enum Subcommands {
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
+
+        #[arg(help = "Name for the feature set", long = "feature-set-name", help_heading = "Input", default_value = "unnamed")]
+        feature_set_name: String,
 
         #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
         sbwt_and_lcs_save_prefix: Option<PathBuf>,
@@ -732,7 +736,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, sbwt_and_lcs_save_prefix} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
@@ -760,7 +764,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
@@ -768,7 +772,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name);
             }
 
         },
