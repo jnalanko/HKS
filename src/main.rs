@@ -220,9 +220,9 @@ fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca
 /// ```
 ///
 /// one entry per line, tokens separated by whitespace. Returns a vector of
-/// priorities indexed by node id (same ordering as `node_names`). Every node
-/// in `node_names` must appear exactly once; unknown names and duplicates
-/// are errors.
+/// priorities indexed by node id (same ordering as `node_names`). Nodes that
+/// do not appear in the file default to priority 0 (an INFO line is logged for
+/// each such node). Unknown names and duplicate entries are errors.
 fn parse_node_priorities(path: &Path, node_names: &[String]) -> Result<Vec<usize>, String> {
     let file = File::open(path).map_err(|e| format!("Could not open priorities file {}: {e}", path.display()))?;
     let name_to_id: HashMap<&str, usize> = node_names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
@@ -248,16 +248,11 @@ fn parse_node_priorities(path: &Path, node_names: &[String]) -> Result<Vec<usize
         priorities[id] = Some(pri);
     }
 
-    let missing: Vec<&str> = priorities.iter().enumerate()
-        .filter_map(|(i, p)| if p.is_none() { Some(node_names[i].as_str()) } else { None })
-        .collect();
-    if !missing.is_empty() {
-        return Err(format!(
-            "Priority file {} is missing {} node(s): [{}]",
-            path.display(),
-            missing.len(),
-            missing.join(", ")
-        ));
+    for (i, p) in priorities.iter_mut().enumerate() {
+        if p.is_none() {
+            log::info!("Node {:?} not found in priority file {}; defaulting to priority 0", node_names[i], path.display());
+            *p = Some(0);
+        }
     }
 
     Ok(priorities.into_iter().map(|p| p.unwrap()).collect())
