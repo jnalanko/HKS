@@ -11,6 +11,7 @@ use parallel_queries::OutputWriter;
 use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
 
 mod single_colored_kmers;
+mod build;
 mod lca_tree;
 mod lca_support;
 mod priority_lca;
@@ -130,7 +131,7 @@ impl ColorIndex {
         feature_set_name: &str,
     ) -> Result<(), String> {
         match self {
-            ColorIndex::FixedK(index) => index.add_feature_set(input_streams, n_threads, hierarchy, feature_set_name),
+            ColorIndex::FixedK(index) => build::add_feature_set(index, input_streams, n_threads, hierarchy, feature_set_name, None),
         }
     }
 
@@ -282,8 +283,7 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     feature_set_name: &str,
     priorities: Option<Vec<usize>>,
 ) {
-    log::info!("Marking colors");
-    let index = FixedKColorIndex::new_with_priorities(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name, priorities);
+    let index: FixedKColorIndex = build::build(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name, priorities);
     let index = ColorIndex::FixedK(index);
 
     log::info!("Writing to {}", out_path.display());

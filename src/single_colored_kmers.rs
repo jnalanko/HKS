@@ -1,17 +1,12 @@
 use std::io::{Read, Write};
 use std::ops::Range;
-use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
-use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
 use bitvec_sds::traits::RandomAccessU32;
 //use bitvec_sds::wavelet_tree::{SelectSupportBoth, WaveletTree};
-use crossbeam::channel::{Receiver, RecvTimeoutError};
-use jseqio::seq_db::SeqDB;
-use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStream, StreamingIndex, SubsetMatrix};
+use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, StreamingIndex, SubsetMatrix};
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
-use crate::priority_lca::PriorityLca;
 use crate::traits::*;
 
 #[derive(Debug, Clone)]
@@ -185,199 +180,6 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     }
 
-    fn progress_print_thread(n_bases_processed: &AtomicU64, quit_signal: Receiver<bool>) {
-        log::info!("Processing up to 2n bases, where n is the number of bases in the input."); // 2n due to reverse complements
-        let print_interval = 10; // seconds
-        let mut last_print_time = Instant::now();
-        let mut last_count = 0_u64;
-        loop {
-            match quit_signal.recv_timeout(Duration::from_secs(print_interval)) {
-                Ok(_) => return, // Received quit signal
-                Err(RecvTimeoutError::Timeout) => { // print_interval seconds has passed
-                    let count = n_bases_processed.load(std::sync::atomic::Ordering::Relaxed);
-                    let dcount = count - last_count;
-                    let elapsed = last_print_time.elapsed().as_secs_f64();
-                    log::info!("{} bases processed (total {}) ({:.2} Mbases/sec)", dcount, count, dcount as f64 / elapsed / 1e6);
-                    last_count = count;
-                    last_print_time = Instant::now();
-                },
-                Err(RecvTimeoutError::Disconnected) => {
-                    // I'm not sure when this would happen, but let's just quit
-                    return 
-                }
-            }
-        }
-    }
-
-
-    // Generic function that works on any of u8, 16, u32 and u64
-    fn mark_colors<T: SeqStream + Send, A: AtomicColorVec + Send + Sync, CL: ContractLeft + Sync, F: Fn(usize, usize) -> usize + Sync>(sbwt: &sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: &CL, input_streams: Vec<T>, n_threads: usize, color_hierarchy: &LcaTree, merge: &F) -> SimpleColorStorage {
-
-        let color_ids = A::new(sbwt.n_sets());
-        let si = StreamingIndex {
-            extend_right: sbwt,
-            contract_left: lcs,
-            n: sbwt.n_sets(),
-            k: sbwt.k(),
-        };
-        let n_colors = color_hierarchy.n_nodes();
-
-        let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
-        let n_bases_processed = AtomicU64::new(0);
-        std::thread::scope(|scope| { thread_pool.install(|| {
-
-            // Let's set up a thread that prints progress in regular intervals.
-            // This channel will be used to tell it to quit:
-            let (quit_print_send, quit_print_recv) = crossbeam::channel::unbounded::<bool>();
-            let _progress_printer = scope.spawn({
-                let n_bases_processed = &n_bases_processed;
-                move || {
-                    HksIndex::<L,C>::progress_print_thread(n_bases_processed, quit_print_recv);
-                }
-            });
-
-            let (batch_send, batch_recv) = crossbeam::channel::bounded::<ColoringBatch>(4);
-
-            // Create a reader that pushes batches to workers
-            let reader_handle = scope.spawn(move || {
-                let mut batch = ColoringBatch{dbs: vec![], dummy_mer_dbs: vec![], total_len: 0};
-                let b = 10000; // Batch size
-                let k = sbwt.k();
-                for (color, mut stream) in input_streams.into_iter().enumerate() {
-                    while let Some(seq) = stream.stream_next() {
-                        // Push dummy-mers
-                        crate::util::for_each_run_with_key(seq, |c| IS_DNA[*c as usize], |mut run_range: Range<usize>| {
-                            if !run_range.is_empty() && IS_DNA[seq[run_range.start] as usize] {
-                                // Start of run of DNA characters
-                                if run_range.len() >= k { // Clip to length k-1
-                                    run_range = run_range.start..run_range.start+(k-1);
-                                }
-                                let mer = &seq[run_range.clone()];
-                                batch.push_dummy_mer(color, mer);
-                            }
-                        });
-
-                        // Push the rest in pieces, flushing when appropriate
-                        crate::util::process_kmers_in_pieces(seq, k, b, |_piece_idx, piece: &[u8]|{
-                            batch.push(color, piece);
-
-                            if batch.total_len >= b {
-                                // Swap the current batch with an empty batch, and send it to processing
-                                let mut batch_to_send = ColoringBatch{dbs: vec![], dummy_mer_dbs: vec![], total_len: 0}; // Empty batch
-                                std::mem::swap(&mut batch, &mut batch_to_send);
-                                batch_send.send(batch_to_send).unwrap();
-                            }
-                        });
-                    }
-                }
-                // Push the last batch
-                if batch.total_len > 0 {
-                    batch_send.send(batch).unwrap();
-                }
-
-                // batch_send is dropped here which closes the channel
-            });
-
-            // Create worker threads
-            let mut worker_handles = Vec::new();
-            for _ in 0..n_threads {
-                let batch_recv_clone = batch_recv.clone(); // Moved into worker
-                let si_ref = &si; // Moved into worker
-                let n_bases_processed_ref = &n_bases_processed; // Moved into worker
-                let color_ids_ref = &color_ids; // Moved into worker
-                worker_handles.push(scope.spawn(move || {
-                    while let Ok(batch) = batch_recv_clone.recv() {
-                        batch.run(si_ref, color_ids_ref, n_bases_processed_ref, merge);
-                    }
-                }));
-            }
-
-            // Wait for reader to finish
-            reader_handle.join().unwrap();
-
-            // Wait for the workers to finish.
-            for w in worker_handles {
-                w.join().unwrap();
-            }
-
-            // Tell the progress printer to quit (otherwise we hang)
-            quit_print_send.send(true).unwrap(); 
-        })});
-
-        // Compress color_ids into a BitVec
-        log::info!("Bitpacking color id array");
-        let mut compressed_colors = SimpleColorStorage::new(sbwt.n_sets(), n_colors);
-        let mut total_some_count = 0_usize;
-        let mut total_none_count = 0_usize;
-        for i in 0..sbwt.n_sets() {
-            let cv = color_ids.read(i);
-            match cv {
-                Some(_) => total_some_count += 1,
-                None => total_none_count += 1,
-            }
-            compressed_colors.set_color(i, cv);
-        }
-
-        log::info!("Colored {} sbwt positions", total_some_count);
-        log::info!("{} sbwt positions left uncolored", total_none_count);
-
-        compressed_colors
-
-    }
-
-    /// Thin dispatcher that picks the atomic int width for the color vector
-    /// and calls `mark_colors`. Extracted so the per-closure monomorphization
-    /// of `mark_colors` lives in one place.
-    fn mark_colors_dispatch<T: SeqStream + Send, CL: ContractLeft + Sync, F: Fn(usize, usize) -> usize + Sync>(
-        sbwt: &sbwt::SbwtIndex<sbwt::SubsetMatrix>,
-        lcs: &CL,
-        input_streams: Vec<T>,
-        n_threads: usize,
-        required_bit_width: usize,
-        color_hierarchy: &LcaTree,
-        merge: &F,
-    ) -> SimpleColorStorage {
-        if required_bit_width <= 8 {
-            Self::mark_colors::<T, Vec::<AtomicU8>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
-        } else if required_bit_width <= 16 {
-            Self::mark_colors::<T, Vec::<AtomicU16>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
-        } else if required_bit_width <= 32 {
-            Self::mark_colors::<T, Vec::<AtomicU32>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
-        } else {
-            Self::mark_colors::<T, Vec::<AtomicU64>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
-        }
-    }
-
-
-    pub fn new<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy, feature_set_name: &str) -> Self {
-        Self::new_with_priorities(sbwt, lcs, input_streams, n_threads, hierarchy, feature_set_name, None)
-    }
-
-    /// Same as [`new`], but allows supplying per-node priorities to enable
-    /// priority-aware LCA during construction. The priorities are used only
-    /// for the merge fold; they are not stored in the resulting index.
-    pub fn new_with_priorities<T: SeqStream + Send>(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, input_streams: Vec<T>, n_threads: usize, hierarchy: ColorHierarchy, feature_set_name: &str, priorities: Option<Vec<usize>>) -> Self {
-        let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1); // +1 for the "none"
-
-        let tree = hierarchy.tree();
-        log::info!("Marking colors");
-        let color_storage = match priorities {
-            Some(p) => {
-                let plca = PriorityLca::new(tree, p)
-                    .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
-                HksIndex::<L,C>::mark_colors_dispatch::<T, LcsArray, _>(&sbwt, &lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| plca.plca(a, b))
-            }
-            None => {
-                HksIndex::<L,C>::mark_colors_dispatch::<T, LcsArray, _>(&sbwt, &lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| tree.lca(a, b))
-            }
-        };
-
-        log::info!("Indexing color id array");
-        let color_assignments = C::from(color_storage);
-        let fs = FeatureSet{color_assignments, hierarchy, name: feature_set_name.to_owned()};
-        Self::new_given_feature_sets(sbwt, lcs, vec![fs])
-    }
-
     pub fn new_given_feature_sets(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, feature_sets: Vec<FeatureSet<C>>) -> Self {
         log::info!("Indexing LCS array");
         let lcs_index = L::from(lcs);
@@ -388,53 +190,11 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         }
     }
 
-    pub fn add_feature_set<T: SeqStream + Send>(
-        &mut self,
-        input_streams: Vec<T>,
-        n_threads: usize,
-        hierarchy: ColorHierarchy,
-        feature_set_name: &str,
-    ) -> Result<(), String>
-    where
-        L: Sync,
-    {
-        self.add_feature_set_with_priorities(input_streams, n_threads, hierarchy, feature_set_name, None)
-    }
-
-    pub fn add_feature_set_with_priorities<T: SeqStream + Send>(
-        &mut self,
-        input_streams: Vec<T>,
-        n_threads: usize,
-        hierarchy: ColorHierarchy,
-        feature_set_name: &str,
-        priorities: Option<Vec<usize>>,
-    ) -> Result<(), String>
-    where
-        L: Sync,
-    {
-        if self.feature_sets.iter().any(|fs| fs.name == feature_set_name) {
-            return Err(format!("Feature set name \"{}\" already exists in index", feature_set_name));
-        }
-
-        let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1);
-
-        let tree = hierarchy.tree();
-        log::info!("Marking colors");
-        let color_storage = match priorities {
-            Some(p) => {
-                let plca = PriorityLca::new(tree, p)
-                    .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
-                Self::mark_colors_dispatch::<T, L, _>(&self.sbwt, &self.lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| plca.plca(a, b))
-            }
-            None => {
-                Self::mark_colors_dispatch::<T, L, _>(&self.sbwt, &self.lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| tree.lca(a, b))
-            }
-        };
-
-        log::info!("Indexing color id array");
-        let color_assignments = C::from(color_storage);
-        self.feature_sets.push(FeatureSet{color_assignments, hierarchy, name: feature_set_name.to_owned()});
-        Ok(())
+    /// Append a feature set. Construction of the `FeatureSet` itself (the
+    /// color-marking fold) lives in `crate::build`; this accessor just pushes
+    /// the finished record onto the vector.
+    pub fn push_feature_set(&mut self, fs: FeatureSet<C>) {
+        self.feature_sets.push(fs);
     }
 
     pub fn n_sbwt_sets(&self) -> usize {
@@ -655,152 +415,6 @@ pub struct ColorStats {
     pub color_counts: Vec<usize>,
 }
 
-// This bit vector of length 256 marks the ascii values of these characters: acgtACGT
-const IS_DNA: BitArray<[u32; 8]> = bitarr![const u32, Lsb0; 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-
-
-
-impl<T: AtomicUint> AtomicColorVec for Vec<T> {
-    fn new(len: usize) -> Self {
-        (0..len).map(|_| T::new(T::max_value())).collect()
-    }
-
-    fn update<F: Fn(usize, usize) -> usize>(&self, i: usize, x: usize, merge: &F) {
-        assert!(x != Self::none_sentinel(), "x must not be the none sentinel");
-        self[i].fetch_update(|cur| {
-            if cur == Self::none_sentinel() {
-                x              // first assignment: replace none with color
-            } else {
-                merge(cur, x)  // subsequent: merge two colors (standard or priority-aware LCA)
-            }
-        });
-    }
-
-    fn read(&self, i: usize) -> Option<usize> {
-        let x = self[i].load(std::sync::atomic::Ordering::Relaxed);
-        if x == Self::none_sentinel() {
-            None
-        } else {
-            Some(x)
-        }
-    }
-
-    fn none_sentinel() -> usize {
-        T::max_value()
-    }
-}
-
-struct ColoringBatch {
-    dbs: Vec<(usize, SeqDB)>, // Pairs (color, seqs)
-    dummy_mer_dbs: Vec<(usize, SeqDB)>, // Pairs (color, seqs)
-    total_len: usize,
-}
-
-impl ColoringBatch {
-    fn push(&mut self, color: usize, seq: &[u8]) {
-        // logic: push to the last DB if it has the right color,
-        // othewise create a new DB and push to that. Add the length
-        // of seq to self.total_len.
-
-        let mut extended = false;
-        if let Some((last_color, last_db)) = self.dbs.last_mut() {
-            if *last_color == color {
-                // Extend last db
-                last_db.push_seq(seq);
-                extended = true;
-            }
-        }
-
-        if !extended {
-            // Start a new one
-            let mut db = SeqDB::new();
-            db.push_seq(seq);
-            self.dbs.push((color, db));
-        }
-
-        self.total_len += seq.len();
-    }
-
-    fn push_dummy_mer(&mut self, color: usize, mer: &[u8]) {
-        // logic: push to the last DB if it has the right color,
-        // othewise create a new DB and push to that. Add the length
-        // of seq to self.total_len.
-
-        let mut extended = false;
-        if let Some((last_color, last_db)) = self.dummy_mer_dbs.last_mut() {
-            if *last_color == color {
-                // Extend last db
-                last_db.push_seq(mer);
-                extended = true;
-            }
-        }
-
-        if !extended {
-            // Start a new one
-            let mut db = SeqDB::new();
-            db.push_seq(mer);
-            self.dummy_mer_dbs.push((color, db));
-        }
-
-        self.total_len += mer.len();
-    }
-
-    fn run<V: AtomicColorVec, CL: ContractLeft, F: Fn(usize, usize) -> usize>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, merge: &F) {
-        let k = si.k;
-        let mut thread_progress = 0_usize;
-
-        // Process full k-mers
-        for (color, db) in self.dbs.iter() {
-            for rec in db.iter() {
-                let seq = rec.seq;
-                let ms = si.matching_statistics_iter(seq);
-                ms.enumerate().for_each(|(i, (len, range))| {
-                    if len == k {
-                        debug_assert!(range.len() == 1); // Full k-mer should have a singleton range
-                        color_ids.update(range.start, *color, merge);
-                    } else if cfg!(debug_assertions) && i >= k-1 {
-                        // All valid k-mers should be found. If we're here, the k-mer must have had non-ACGT
-                        // characters which make it invalid. Let's verify that.
-                        let kmer = &seq[i-(k-1)..=i];
-                        let all_ACGT = kmer.iter().all(|c| IS_DNA[*c as usize]);
-                        if all_ACGT {
-                            panic!("Error: k-mer {} not found in sbwt", String::from_utf8_lossy(kmer));
-                        }
-                    }
-                    thread_progress += 1;
-                    if thread_progress == 10000 {
-                        // Only record progress every 10000 iterations to reduce synchronization overhead. 
-                        // This made the code 30% faster in tests with 4 threads.
-                        progress_counter.fetch_add(10000, std::sync::atomic::Ordering::Relaxed);
-                        thread_progress = 0;
-                    }
-                });
-            }
-        }
-
-        // Process dummy mers
-        for (color, db) in self.dummy_mer_dbs.iter() {
-            for rec in db.iter() {
-                let mer = rec.seq;
-                let ms = si.matching_statistics_iter(mer);
-                ms.for_each(|(len, range)| { 
-                    assert!(range.len() > 0);
-                    assert!(len < k);
-                    // IMPORTANT. We assume that all the dummy paths to the starts of
-                    // all the runs of ACGT are in the SBWT. Then this colex position
-                    // will correspond to a dummy node. We could add a check for this
-                    // but it's expensive.
-                    let colex = range.start;
-                    color_ids.update(colex, *color, merge);
-                });
-            }
-        }
-
-        progress_counter.fetch_add(thread_progress as u64, std::sync::atomic::Ordering::Relaxed); // Add leftover progress
-    }
-}
-
-
 pub struct SingleColoredKmersShort<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     inner: HksIndex<L,C>, // For each feature set, k-mers sharing an s-mer have been made to have the same color: the LCA in the color hierarchy
     k: usize, // the query k-mer length
@@ -905,7 +519,7 @@ mod tests {
             .collect();
 
         let index: HksIndex<LcsWrapper, SimpleColorStorage> =
-            HksIndex::new(sbwt, lcs, streams, 1, hierarchy, "feature_set_name");
+            crate::build::build(sbwt, lcs, streams, 1, hierarchy, "feature_set_name", None);
 
         // Sequential reference: run the simple single-threaded loop
         let (_, lcs_seq, feature_sets) = index.clone().into_parts();

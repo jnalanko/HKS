@@ -464,7 +464,7 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = HksIndex::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
+        let sck: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
         eprintln!("SingleColoredKmers built");
 
         // Generate 1000 random queries of lengths between 1 and 100
@@ -589,7 +589,7 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = HksIndex::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed");
+        let sck: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
         eprintln!("SingleColoredKmers built");
 
         // Generate random queries of lengths between 1 and 50
@@ -671,8 +671,8 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter()
             .map(|s| SingleSeqStream::new(s.clone()))
             .collect();
-        let original = HksIndex::<LcsWrapper, SimpleColorStorage>::new(
-            sbwt, lcs, seqstreams, 1, ColorHierarchy::new_star(color_names), "unnamed"
+        let original: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(
+            sbwt, lcs, seqstreams, 1, ColorHierarchy::new_star(color_names), "unnamed", None
         );
 
         // Serialize
