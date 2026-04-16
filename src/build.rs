@@ -97,17 +97,21 @@ where
         Some(p) => {
             let plca = PriorityLca::new(tree, p)
                 .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
-            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| plca.plca(a, b))
+            let plca_override = |a,b| Some(plca.plca(a, b));
+            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &plca_override)
         }
         None => {
-            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &|a, b| tree.lca(a, b))
+            let no_override = |_: usize, _: usize| None;
+            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &no_override)
         }
     }
 }
 
 /// Thin dispatcher that picks the atomic int width for the color vector and
 /// calls `mark_colors`. Extracted so the per-closure monomorphization of
-/// `mark_colors` lives in one place.
+/// `mark_colors` lives in one place. The lca_override function takes a pair
+/// of nodes and returns Some(node) if we want to override the LCA with that
+/// node instead, otherwise None.
 fn mark_colors_dispatch<T, CL, F>(
     sbwt: &SbwtIndex<SubsetMatrix>,
     lcs: &CL,
@@ -115,21 +119,21 @@ fn mark_colors_dispatch<T, CL, F>(
     n_threads: usize,
     required_bit_width: usize,
     color_hierarchy: &LcaTree,
-    merge: &F,
+    lca_override: &F,
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
     CL: ContractLeft + Sync,
-    F: Fn(usize, usize) -> usize + Sync,
+    F: Fn(usize, usize) -> Option<usize> + Sync,
 {
     if required_bit_width <= 8 {
-        mark_colors::<T, Vec<AtomicU8>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        mark_colors::<T, Vec<AtomicU8>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
     } else if required_bit_width <= 16 {
-        mark_colors::<T, Vec<AtomicU16>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        mark_colors::<T, Vec<AtomicU16>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
     } else if required_bit_width <= 32 {
-        mark_colors::<T, Vec<AtomicU32>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        mark_colors::<T, Vec<AtomicU32>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
     } else {
-        mark_colors::<T, Vec<AtomicU64>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, merge)
+        mark_colors::<T, Vec<AtomicU64>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
     }
 }
 
@@ -139,13 +143,13 @@ fn mark_colors<T, A, CL, F>(
     input_streams: Vec<T>,
     n_threads: usize,
     color_hierarchy: &LcaTree,
-    merge: &F,
+    lca_override: &F,
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
     A: AtomicColorVec + Send + Sync,
     CL: ContractLeft + Sync,
-    F: Fn(usize, usize) -> usize + Sync,
+    F: Fn(usize, usize) -> Option<usize> + Sync,
 {
     let color_ids = A::new(sbwt.n_sets());
     let si = StreamingIndex {
@@ -207,7 +211,7 @@ where
             let color_ids_ref = &color_ids;
             worker_handles.push(scope.spawn(move || {
                 while let Ok(batch) = batch_recv_clone.recv() {
-                    batch.run(si_ref, color_ids_ref, n_bases_processed_ref, merge);
+                    batch.run(si_ref, color_ids_ref, n_bases_processed_ref, color_hierarchy, lca_override);
                 }
             }));
         }
@@ -267,13 +271,17 @@ impl<T: AtomicUint> AtomicColorVec for Vec<T> {
         (0..len).map(|_| T::new(T::max_value())).collect()
     }
 
-    fn update<F: Fn(usize, usize) -> usize>(&self, i: usize, x: usize, merge: &F) {
+    fn update<F: Fn(usize, usize) -> Option<usize>>(&self, i: usize, x: usize, hierarchy: &LcaTree, lca_override: &F) {
         assert!(x != Self::none_sentinel(), "x must not be the none sentinel");
         self[i].fetch_update(|cur| {
             if cur == Self::none_sentinel() {
                 x
             } else {
-                merge(cur, x)
+                if let Some(y) = lca_override(cur, x) {
+                    y
+                } else {
+                    hierarchy.lca(cur, x)
+                }
             }
         });
     }
@@ -327,11 +335,11 @@ impl ColoringBatch {
         self.total_len += mer.len();
     }
 
-    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, merge: &F)
+    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, color_hierarchy: &LcaTree, lca_override: &F)
     where
         V: AtomicColorVec,
         CL: ContractLeft,
-        F: Fn(usize, usize) -> usize,
+        F: Fn(usize, usize) -> Option<usize>,
     {
         let k = si.k;
         let mut thread_progress = 0_usize;
@@ -343,7 +351,7 @@ impl ColoringBatch {
                 ms.enumerate().for_each(|(i, (len, range))| {
                     if len == k {
                         debug_assert!(range.len() == 1);
-                        color_ids.update(range.start, *color, merge);
+                        color_ids.update(range.start, *color, color_hierarchy, lca_override);
                     } else if cfg!(debug_assertions) && i >= k - 1 {
                         let kmer = &seq[i - (k - 1)..=i];
                         let all_acgt = kmer.iter().all(|c| IS_DNA[*c as usize]);
@@ -368,7 +376,7 @@ impl ColoringBatch {
                     assert!(range.len() > 0);
                     assert!(len < k);
                     let colex = range.start;
-                    color_ids.update(colex, *color, merge);
+                    color_ids.update(colex, *color, color_hierarchy, lca_override);
                 });
             }
         }
