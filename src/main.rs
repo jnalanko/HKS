@@ -129,9 +129,10 @@ impl ColorIndex {
         n_threads: usize,
         hierarchy: ColorHierarchy,
         feature_set_name: &str,
+        priorities: Option<Vec<usize>>,
     ) -> Result<(), String> {
         match self {
-            ColorIndex::FixedK(index) => build::add_feature_set(index, input_streams, n_threads, hierarchy, feature_set_name, None),
+            ColorIndex::FixedK(index) => build::add_feature_set(index, input_streams, n_threads, hierarchy, feature_set_name, priorities),
         }
     }
 
@@ -432,6 +433,9 @@ pub enum Subcommands {
 
         #[arg(help = "Name for the new feature set. Must not collide with an existing feature set name in the index.", long = "feature-set-name", required = true)]
         feature_set_name: String,
+
+        #[arg(help = "Optional: a file assigning an integer priority to every node in the hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.", long = "node-priorities", help_heading = "Input")]
+        node_priorities: Option<PathBuf>,
 
         #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
         forward_only: bool,
@@ -963,7 +967,7 @@ fn main() {
             }
         },
 
-        Subcommands::AddFeatureSet { index: index_path, output, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, forward_only, n_threads } => {
+        Subcommands::AddFeatureSet { index: index_path, output, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
             let out_path = output.unwrap_or_else(|| index_path.clone());
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --label-by-file or --label-by-seq is required");
@@ -981,11 +985,13 @@ fn main() {
 
             if let Some(fof) = label_by_file {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
-                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name)
+                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
+                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
                     .unwrap_or_else(|e| panic!("{e}"));
             } else {
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
-                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name)
+                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
+                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
                     .unwrap_or_else(|e| panic!("{e}"));
             }
 
