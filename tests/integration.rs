@@ -47,7 +47,7 @@ fn build_label_by_file() {
     let dir = tmp_dir();
     let status = hks()
         .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -69,7 +69,7 @@ fn build_label_by_seq() {
         .args(["build", "-s", "10", "--label-by-seq"])
         .arg(&combined)
         .args(["-o"])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -91,7 +91,7 @@ fn build_with_hierarchy() {
             "example/hierarchy.txt",
             "-o",
         ])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -115,7 +115,7 @@ fn build_with_custom_labels() {
         ])
         .arg(&labels_file)
         .args(["-o"])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -147,7 +147,7 @@ fn build_with_unitigs() {
         ])
         .arg(&unitigs)
         .args(["-o"])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -168,7 +168,7 @@ fn build_forward_only() {
             "--forward-only",
             "-o",
         ])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -190,7 +190,7 @@ fn build_n_threads() {
             "2",
             "-o",
         ])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -214,7 +214,7 @@ fn build_external_memory() {
         ])
         .arg(&tmp_work)
         .args(["-o"])
-        .arg(dir.join("index.hks"))
+        .arg(dir.join("index.hksb"))
         .arg("--feature-set-output")
         .arg(dir.join("index.hkfs"))
         .status()
@@ -227,7 +227,7 @@ fn build_external_memory() {
 #[test]
 fn lookup_basic() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -243,7 +243,7 @@ fn lookup_basic() {
 #[test]
 fn lookup_with_k() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -260,7 +260,7 @@ fn lookup_with_k() {
 #[test]
 fn lookup_report_label_ids() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -277,7 +277,7 @@ fn lookup_report_label_ids() {
 #[test]
 fn lookup_report_query_names() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -294,7 +294,7 @@ fn lookup_report_query_names() {
 #[test]
 fn lookup_report_misses() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -311,7 +311,7 @@ fn lookup_report_misses() {
 #[test]
 fn lookup_no_header() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -328,7 +328,7 @@ fn lookup_no_header() {
 #[test]
 fn lookup_n_threads() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -345,7 +345,7 @@ fn lookup_n_threads() {
 #[test]
 fn lookup_batch_size() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -364,7 +364,7 @@ fn lookup_batch_size() {
 #[test]
 fn stats_basic() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -382,7 +382,7 @@ fn stats_basic() {
 #[test]
 fn node_stats_basic() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -398,7 +398,7 @@ fn node_stats_basic() {
 #[test]
 fn node_stats_report_label_names() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
@@ -415,7 +415,7 @@ fn node_stats_report_label_names() {
 #[test]
 fn node_stats_n_threads() {
     let dir = tmp_dir();
-    let index = dir.join("index.hks");
+    let index = dir.join("index.hksb");
     let fs = dir.join("index.hkfs");
     build_basic_index(&index, &fs);
     let status = hks()
