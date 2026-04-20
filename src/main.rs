@@ -31,7 +31,7 @@ enum ColorIndex { // For now just one variant, might add more later
 }
 
 // If these names change, remember to also update the hardcoded mention in the
-// help text of the --labels argument in the Build subcommand below.
+// help text of the --names argument in the Build subcommand below.
 // The duplication exists because Rust's concat!() only accepts literals, so
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none"];
@@ -323,8 +323,8 @@ pub enum Subcommands {
 
         // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
         // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label \"none\" is reserved and cannot be used.", long = "labels", help_heading = "Input")]
-        labels: Option<PathBuf>,
+        #[arg(help = "Optional: a file with one name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name \"none\" is reserved and cannot be used.", long = "names", help_heading = "Input")]
+        names: Option<PathBuf>,
 
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
@@ -750,7 +750,7 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, labeling_name} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, names: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, labeling_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 

@@ -103,7 +103,7 @@ fn build_with_custom_labels() {
             "10",
             "--label-by-file",
             "example/file_of_files.txt",
-            "--labels",
+            "--names",
         ])
         .arg(&labels_file)
         .args(["-o"])

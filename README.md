@@ -67,7 +67,7 @@ Input:
       --label-by-file <LABEL_BY_FILE>  A file with one fasta/fastq filename per line, one per label
       --label-by-seq <LABEL_BY_SEQ>    Give input as a single FASTA file, one sequence per label
   -u, --unitigs <UNITIGS>              Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
-      --labels <LABELS>                Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label "none" is reserved and cannot be used.
+      --names <NAMES>                  Optional: a file with one name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name "none" is reserved and cannot be used.
       --hierarchy <HIERARCHY>          Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named "root").
 
 Advanced use:
@@ -139,7 +139,7 @@ Advanced:
 
 ### Hierarchy file format
 
-By default, HKS uses a star topology: all labels are children of a single root node. The `--hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--labels` must appear in at least one edge. There can also be labels that were not provided with `--labels`.
+By default, HKS uses a star topology: all labels are children of a single root node. The `--hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--names` must appear in at least one edge.
 
 See `example/hierarchy.txt` for an example.
 
