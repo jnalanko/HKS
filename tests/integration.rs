@@ -29,10 +29,12 @@ fn hks() -> Command {
     cmd
 }
 
-fn build_basic_index(out: &Path) {
+fn build_basic_index(index_out: &Path, fs_out: &Path) {
     let status = hks()
         .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
-        .arg(out)
+        .arg(index_out)
+        .arg("--feature-set-output")
+        .arg(fs_out)
         .status()
         .unwrap();
     assert!(status.success(), "basic index build failed");
@@ -46,6 +48,8 @@ fn build_label_by_file() {
     let status = hks()
         .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -66,6 +70,8 @@ fn build_label_by_seq() {
         .arg(&combined)
         .args(["-o"])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -86,6 +92,8 @@ fn build_with_hierarchy() {
             "-o",
         ])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -108,6 +116,8 @@ fn build_with_custom_labels() {
         .arg(&labels_file)
         .args(["-o"])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -138,6 +148,8 @@ fn build_with_unitigs() {
         .arg(&unitigs)
         .args(["-o"])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -157,6 +169,8 @@ fn build_forward_only() {
             "-o",
         ])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -177,6 +191,8 @@ fn build_n_threads() {
             "-o",
         ])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -199,6 +215,8 @@ fn build_external_memory() {
         .arg(&tmp_work)
         .args(["-o"])
         .arg(dir.join("index.hks"))
+        .arg("--feature-set-output")
+        .arg(dir.join("index.hkfs"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -210,10 +228,13 @@ fn build_external_memory() {
 fn lookup_basic() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .status()
         .unwrap();
     assert!(status.success());
@@ -223,10 +244,13 @@ fn lookup_basic() {
 fn lookup_with_k() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["-k", "5"])
         .status()
         .unwrap();
@@ -237,10 +261,13 @@ fn lookup_with_k() {
 fn lookup_report_label_ids() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -251,10 +278,13 @@ fn lookup_report_label_ids() {
 fn lookup_report_query_names() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--report-query-names"])
         .status()
         .unwrap();
@@ -265,10 +295,13 @@ fn lookup_report_query_names() {
 fn lookup_report_misses() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--report-misses"])
         .status()
         .unwrap();
@@ -279,10 +312,13 @@ fn lookup_report_misses() {
 fn lookup_no_header() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--no-header"])
         .status()
         .unwrap();
@@ -293,10 +329,13 @@ fn lookup_no_header() {
 fn lookup_n_threads() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["-t", "2"])
         .status()
         .unwrap();
@@ -307,10 +346,13 @@ fn lookup_n_threads() {
 fn lookup_batch_size() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--batch-size", "100"])
         .status()
         .unwrap();
@@ -323,10 +365,13 @@ fn lookup_batch_size() {
 fn stats_basic() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["stats", "-i"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .status()
         .unwrap();
     assert!(status.success());
@@ -338,10 +383,13 @@ fn stats_basic() {
 fn node_stats_basic() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .status()
         .unwrap();
     assert!(status.success());
@@ -351,10 +399,13 @@ fn node_stats_basic() {
 fn node_stats_report_label_names() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -365,13 +416,15 @@ fn node_stats_report_label_names() {
 fn node_stats_n_threads() {
     let dir = tmp_dir();
     let index = dir.join("index.hks");
-    build_basic_index(&index);
+    let fs = dir.join("index.hkfs");
+    build_basic_index(&index, &fs);
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(&index)
+        .arg("--feature-set-file")
+        .arg(&fs)
         .args(["-t", "2"])
         .status()
         .unwrap();
     assert!(status.success());
 }
-

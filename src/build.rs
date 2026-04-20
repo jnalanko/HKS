@@ -43,35 +43,31 @@ where
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
     let fs = FeatureSet { color_assignments, hierarchy, name: feature_set_name.to_owned() };
-    HksIndex::<L, C>::new_given_feature_sets(sbwt, lcs, vec![fs])
+    HksIndex::<L, C>::new_with_feature_set(sbwt, lcs, fs)
 }
 
-/// Append a new feature set to an existing index.
-pub fn add_feature_set<L, C, T>(
-    index: &mut HksIndex<L, C>,
+/// Build a new feature set from an existing index (sbwt + lcs) and input streams.
+/// The result can be serialized to a standalone feature set file.
+pub fn build_feature_set<L, C, T>(
+    index: &HksIndex<L, C>,
     input_streams: Vec<T>,
     n_threads: usize,
     hierarchy: ColorHierarchy,
     feature_set_name: &str,
     priorities: Option<Vec<usize>>,
-) -> Result<(), String>
+) -> FeatureSet<C>
 where
     L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
     C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>,
     T: SeqStream + Send,
 {
-    if index.feature_sets().iter().any(|fs| fs.name == feature_set_name) {
-        return Err(format!("Feature set name \"{feature_set_name}\" already exists in index"));
-    }
-
     let color_storage = mark_colors_with_priorities::<T, L>(
         index.sbwt(), index.lcs(), input_streams, n_threads, &hierarchy, priorities,
     );
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    index.push_feature_set(FeatureSet { color_assignments, hierarchy, name: feature_set_name.to_owned() });
-    Ok(())
+    FeatureSet { color_assignments, hierarchy, name: feature_set_name.to_owned() }
 }
 
 /// Resolve priorities (or absence thereof) into a merge closure and run

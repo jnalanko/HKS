@@ -17,12 +17,12 @@ fn print_run(seq_id: usize, run_color: Option<usize>, range: Range<usize>, root_
     }
 }
 
-pub fn lookup_single_threaded<L,C>(query_path: &Path, index: &HksIndex<L,C>, k: usize, feature_set_id: usize)
+pub fn lookup_single_threaded<L,C>(query_path: &Path, index: &HksIndex<L,C>, k: usize)
 where L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAccess,
       C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>
 {
 
-    let root_id = index.feature_sets()[feature_set_id].hierarchy.tree().root();
+    let root_id = index.feature_set().hierarchy.tree().root();
     let mut reader = DynamicFastXReader::from_file(&query_path)
         .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
     let mut seq_id = 0_usize;
@@ -32,7 +32,7 @@ where L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAc
         let mut run_start: usize = 0;
         let mut run_color: Option<usize> = None;
         let mut n_kmers = 0;
-        for (i, color) in index.lookup_kmers(rec.seq, k, feature_set_id).enumerate() {
+        for (i, color) in index.lookup_kmers(rec.seq, k).enumerate() {
             if i == 0 { // Start a new run
                 run_start = i;
                 run_color = color;

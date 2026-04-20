@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
 use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SbwtIndexVariant, SubsetMatrix, write_sbwt_index_variant};
-use single_colored_kmers::{ColorHierarchy, HksIndex};
+use single_colored_kmers::{ColorHierarchy, FeatureSet, HksIndex};
 use parallel_queries::OutputWriter;
 
 use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
@@ -36,33 +36,35 @@ enum ColorIndex { // For now just one variant, might add more later
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
-const HKS_FILE_ID: [u8; 8] = *b"hks0.1.4";
+const HKS_FILE_ID: [u8; 8] = *b"hks0.1.5";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 //const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
 
 impl ColorIndex {
-    fn serialize(&self, out: &mut impl Write) {
+    fn serialize_base(&self, out: &mut impl Write) {
         match self {
             ColorIndex::FixedK(index) => {
                 out.write_all(&HKS_FILE_ID).unwrap();
                 out.write_all(&FIXED_INDEX_TYPE_ID).unwrap();
-                index.serialize(out);
+                index.serialize_base(out);
             },
         }
     }
 
-    fn load(input: &mut impl Read) -> Self {
+    fn load(base_input: &mut impl Read, fs_input: &mut impl Read) -> Self {
         let mut file_id = [0_u8; 8];
-        input.read_exact(&mut file_id).unwrap();
+        base_input.read_exact(&mut file_id).unwrap();
         assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
 
         let mut type_id = [0_u8; 4];
-        input.read_exact(&mut type_id).unwrap();
+        base_input.read_exact(&mut type_id).unwrap();
         match type_id {
             FIXED_INDEX_TYPE_ID => {
-                let index = ColorIndex::FixedK(FixedKColorIndex::load(input));
+                let (sbwt, lcs) = FixedKColorIndex::load_base(base_input);
+                let feature_set = FeatureSet::<SimpleColorStorage>::load_from_file(fs_input);
+                let index = FixedKColorIndex::from_parts(sbwt, lcs, feature_set);
                 log::info!("Loaded index with s = {}", index.k());
-                index
+                ColorIndex::FixedK(index)
             },
             _ => {
                 panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
@@ -88,75 +90,28 @@ impl ColorIndex {
         }
     }
 
-    fn resolve_feature_set_id(&self, feature_set_name: Option<&str>) -> Result<usize, String> {
+    fn color_stats(&self) -> ColorStats {
         match self {
-            ColorIndex::FixedK(index) => resolve_feature_set_id(index, feature_set_name),
+            ColorIndex::FixedK(index) => index.color_stats(),
         }
     }
 
-    fn rename_labels(&mut self, new_names: Vec<String>, feature_set_name: Option<&str>) -> Result<(), String> {
-        let id = self.resolve_feature_set_id(feature_set_name)?;
+    fn color_names(&self) -> &[String] {
         match self {
-            ColorIndex::FixedK(index) => index.rename_labels(new_names, id),
-        }
-        Ok(())
-    }
-
-    fn color_stats(&self, feature_set_name: Option<&str>) -> Result<ColorStats, String> {
-        let id = self.resolve_feature_set_id(feature_set_name)?;
-        match self {
-            ColorIndex::FixedK(index) => Ok(index.color_stats(id)),
+            ColorIndex::FixedK(index) => index.feature_set().hierarchy.names(),
         }
     }
 
-    fn color_names(&self, feature_set_name: Option<&str>) -> Result<&[String], String> {
-        let id = self.resolve_feature_set_id(feature_set_name)?;
+    fn color_hierarchy(&self) -> &LcaTree {
         match self {
-            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.names()),
+            ColorIndex::FixedK(index) => index.feature_set().hierarchy.tree(),
         }
     }
 
-    fn color_hierarchy(&self, feature_set_name: Option<&str>) -> Result<&LcaTree, String> {
-        let id = self.resolve_feature_set_id(feature_set_name)?;
+    fn n_colors_in_hierarchy(&self) -> usize {
         match self {
-            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.tree()),
+            ColorIndex::FixedK(index) => index.feature_set().hierarchy.n_nodes(),
         }
-    }
-
-    fn add_feature_set<T: sbwt::SeqStream + Send>(
-        &mut self,
-        input_streams: Vec<T>,
-        n_threads: usize,
-        hierarchy: ColorHierarchy,
-        feature_set_name: &str,
-        priorities: Option<Vec<usize>>,
-    ) -> Result<(), String> {
-        match self {
-            ColorIndex::FixedK(index) => build::add_feature_set(index, input_streams, n_threads, hierarchy, feature_set_name, priorities),
-        }
-    }
-
-    fn n_colors_in_hierarchy(&self, feature_set_name: Option<&str>) -> Result<usize, String> {
-        let id = self.resolve_feature_set_id(feature_set_name)?;
-        match self {
-            ColorIndex::FixedK(index) => Ok(index.feature_sets()[id].hierarchy.n_nodes()),
-        }
-    }
-}
-
-/// Resolve a feature set name (if given) to its id. If no name is given and the index
-/// contains exactly one feature set, returns id 0. Errors if the name is not found, or
-/// if multiple feature sets exist and no name is given. Logs the available feature sets.
-fn resolve_feature_set_id(index: &FixedKColorIndex, feature_set_name: Option<&str>) -> Result<usize, String> {
-    let names: Vec<&str> = index.feature_sets().iter().map(|fs| fs.name.as_str()).collect();
-    log::info!("Available feature sets in index: {}", names.join(", "));
-    if let Some(name) = feature_set_name {
-        index.get_feature_set_id(name)
-            .ok_or_else(|| format!("Feature set name {} not found in index.", name))
-    } else if index.feature_sets().len() > 1 {
-        Err("Multiple feature sets in index but no feature set specified (use --feature-set)".to_string())
-    } else {
-        Ok(0)
     }
 }
 
@@ -274,20 +229,50 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     lcs: LcsArray,
     individual_streams: Vec<T>,
     n_threads: usize,
-    out_path: PathBuf,
+    index_out_path: PathBuf,
+    feature_set_out_path: PathBuf,
     hierarchy: ColorHierarchy,
     feature_set_name: &str,
     priorities: Option<Vec<usize>>,
 ) {
     let index: FixedKColorIndex = build::build(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name, priorities);
-    let index = ColorIndex::FixedK(index);
+    let color_index = ColorIndex::FixedK(index);
 
-    log::info!("Writing to {}", out_path.display());
-    let mut out = BufWriter::new(File::create(out_path.clone())
-        .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", out_path.display())));
-    index.serialize(&mut out);
-    let out_size = std::fs::metadata(&out_path).unwrap().len() as f64;
-    log::info!("Index size on disk: {}", human_bytes::human_bytes(out_size));
+    if let Some(parent) = index_out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+    }
+    log::info!("Writing base index to {}", index_out_path.display());
+    let mut out = BufWriter::new(File::create(&index_out_path)
+        .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", index_out_path.display())));
+    color_index.serialize_base(&mut out);
+    drop(out);
+
+    if let Some(parent) = feature_set_out_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+    }
+    log::info!("Writing feature set to {}", feature_set_out_path.display());
+    let mut fs_out = BufWriter::new(File::create(&feature_set_out_path)
+        .unwrap_or_else(|e| panic!("Could not create feature set file {}: {e}", feature_set_out_path.display())));
+    match &color_index {
+        ColorIndex::FixedK(index) => index.feature_set().serialize_to_file(&mut fs_out),
+    }
+
+    let index_size = std::fs::metadata(&index_out_path).unwrap().len() as f64;
+    let fs_size = std::fs::metadata(&feature_set_out_path).unwrap().len() as f64;
+    log::info!("Base index size on disk: {}", human_bytes::human_bytes(index_size));
+    log::info!("Feature set size on disk: {}", human_bytes::human_bytes(fs_size));
+}
+
+fn open_index(index_path: &PathBuf, feature_set_file: &PathBuf) -> ColorIndex {
+    let mut base_input = BufReader::new(File::open(index_path)
+        .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+    let mut fs_input = BufReader::new(File::open(feature_set_file)
+        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", feature_set_file.display())));
+    ColorIndex::load(&mut base_input, &mut fs_input)
 }
 
 #[derive(Parser)]
@@ -313,8 +298,11 @@ pub enum Subcommands {
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
         unitigs: Option<PathBuf>,
 
-        #[arg(help = "Output filename", short, long, required = true)]
+        #[arg(help = "Output filename for the base index (SBWT + LCS)", short, long, required = true)]
         output: PathBuf,
+
+        #[arg(help = "Output filename for the feature set", long = "feature-set-output", required = true)]
+        feature_set_output: PathBuf,
 
         #[arg(help = "Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.", long = "external-memory")]
         temp_dir: Option<PathBuf>,
@@ -352,8 +340,11 @@ pub enum Subcommands {
 
     #[command(arg_required_else_help = true)]
     Lookup {
-        #[arg(help = "Path to the index file", short, long, required = true)]
+        #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
@@ -368,8 +359,11 @@ pub enum Subcommands {
     // Hidden prompt command (hidden because the user interface might still change a lot)
     #[command(arg_required_else_help = true, hide = true, about = "Load an index once and run multiple queries interactively.")]
     Prompt {
-        #[arg(help = "Path to the index file", short, long, required = true)]
+        #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: Option<u64>,
@@ -380,44 +374,44 @@ pub enum Subcommands {
 
     #[command(about = "Print statistics about an index file.")]
     Stats {
-        #[arg(help = "Path to the index file", short, long, required = true)]
+        #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
-        feature_set: Option<String>,
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
     },
 
     #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= k <= s")]
     NodeStats {
-        #[arg(help = "Path to the index file", long, required = true)]
+        #[arg(help = "Path to the base index file", long, required = true)]
         index: PathBuf,
+
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
 
         #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
         report_color_ids: bool,
 
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
-
-        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
-        feature_set: Option<String>,
     },
 
     #[command(about = "Print the label hierarchy of an index file. Output: number of labels on the first line, then all label names one per line (ids 0,1,2...), then all edges as space-separated child parent pairs, one per line.")]
     PrintHierarchy {
-        #[arg(help = "Path to the index file", short, long, required = true)]
+        #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "The name of the feature set to report. Required only if the index contains more than one feature set.", long)]
-        feature_set: Option<String>,
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
     },
 
-    #[command(arg_required_else_help = true, about = "Add a new feature set to an existing index.")]
+    #[command(arg_required_else_help = true, about = "Build a new feature set for an existing base index and write it to a file.")]
     AddFeatureSet {
-        #[arg(help = "Path to the existing index file", short, long, required = true)]
+        #[arg(help = "Path to the existing base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Output filename for the updated index. Defaults to updating --index in place.", short, long)]
-        output: Option<PathBuf>,
+        #[arg(help = "Output filename for the new feature set file", short, long, required = true)]
+        output: PathBuf,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per label. All k-mers in these files must already be present in the index.", long, help_heading = "Input", conflicts_with = "label_by_seq")]
         label_by_file: Option<PathBuf>,
@@ -431,7 +425,7 @@ pub enum Subcommands {
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Name for the new feature set. Must not collide with an existing feature set name in the index.", long = "feature-set-name", required = true)]
+        #[arg(help = "Name for the new feature set.", long = "feature-set-name", required = true)]
         feature_set_name: String,
 
         #[arg(help = "Optional: a file assigning an integer priority to every node in the hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.", long = "node-priorities", help_heading = "Input")]
@@ -449,30 +443,12 @@ pub enum Subcommands {
         #[arg(help = "A fasta/fastq query file", short, long, required = true)]
         query: PathBuf,
 
-        #[arg(help = "Path to the index file", short, long, required = true)]
+        #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "The name of the feature set to query. Required only if the index contains more than one feature set.", long)]
-        feature_set: Option<String>,
+        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
+        feature_set_file: PathBuf,
     },
-
-    // Outdated from the time there could be only one feature set in the index
-    /*
-    #[command(arg_required_else_help = true, hide = true, about = "Rename labels in an index file.")]
-    RenameLabels {
-        #[arg(help = "Path to the index file", short, long, required = true)]
-        index: PathBuf,
-
-        #[arg(help = "Path to a TSV file with two columns: label internal id (integer) and new label name", long = "new-names", required = true)]
-        new_names: PathBuf,
-
-        #[arg(help = "Output filename for the updated index. Can be the same as the input filename to update in place.", short, long, required = true)]
-        output: PathBuf,
-
-        #[arg(help = "If set, the first column of the new-names file is interpreted as the current label name instead of the internal id.", long = "names-to-names")]
-        names_to_names: bool,
-    },
-    */
 
 }
 
@@ -498,9 +474,6 @@ pub struct LookupQueryArgs {
 
     #[arg(help = "Output file. Defaults to stdout.", short, long)]
     output: Option<PathBuf>,
-
-    #[arg(help = "The name of the feature set to query. If the index contains multiple feature sets, this must be specified to disambiguate. If the index only contains one feature set, this can be left out.", long)]
-    feature_set: Option<String>,
 }
 
 struct DynamicFastXReaderWrapper {
@@ -531,14 +504,13 @@ fn load_seq_names(query_path: &PathBuf) -> Result<Vec<String>, String> {
     Ok(seq_names)
 }
 
-struct LookupAlgorithmForFeatureSet<'a> {
+struct LookupAlgorithmImpl<'a> {
     index: &'a ShortKColorIndex,
-    feature_set_id: usize,
 }
 
-impl<'a> ColoredKmerLookupAlgorithm for LookupAlgorithmForFeatureSet<'a> {
+impl<'a> ColoredKmerLookupAlgorithm for LookupAlgorithmImpl<'a> {
     fn lookup_kmers(&self, query: &[u8], k: usize) -> impl Iterator<Item = Option<usize>> {
-        self.index.inner().lookup_kmers(query, k, self.feature_set_id)
+        self.index.inner().lookup_kmers(query, k)
     }
 }
 
@@ -549,17 +521,15 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
 
 fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs) -> Result<(), String> {
     let k = index.query_k();
-    let feature_set_id = resolve_feature_set_id(index.inner(), args.feature_set.as_deref())?;
-
     let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
     let color_names: Option<Vec<String>> = if args.report_label_ids {
         None
     } else {
-        Some(index.inner().feature_sets()[feature_set_id].hierarchy.names().to_vec())
+        Some(index.inner().feature_set().hierarchy.names().to_vec())
     };
     let reader = open_fastx(&args.query)?;
 
-    // A dynamic writer is fine performance-wise because it's wapped in a buffered writer.
+    // A dynamic writer is fine performance-wise because it's wrapped in a buffered writer.
     let out: Box<dyn Write + Send> = if let Some(ref path) = args.output {
         Box::new(File::create(path).map_err(|e| format!("Could not create output file {}: {e}", path.display()))?)
     } else {
@@ -567,7 +537,7 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
     };
     let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, args.report_misses, !args.no_header);
 
-    let algo = LookupAlgorithmForFeatureSet{index: &index, feature_set_id};
+    let algo = LookupAlgorithmImpl { index };
 
     log::info!("Running queries from {} ...", args.query.display());
     run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
@@ -597,11 +567,10 @@ fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize) {
     }
 }
 
-fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize, feature_set_name: Option<&str>) {
+fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize) {
     use rayon::prelude::*;
 
-    let feature_set_id = index.resolve_feature_set_id(feature_set_name).unwrap_or_else(|e| panic!("{e}"));
-    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names(feature_set_name).unwrap().to_vec());
+    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names().to_vec());
     let ColorIndex::FixedK(mut index) = index;
     let k = index.k();
 
@@ -618,7 +587,7 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
         let k_values: Vec<usize> = (1..=k).rev().collect(); // Need to collect because par_iter does not take rev()
         k_values.into_par_iter().for_each(|s| {
             log::info!("Computing node stats for s = {}", s);
-            let counts = index.node_stats(s, &dummy_marks, feature_set_id);
+            let counts = index.node_stats(s, &dummy_marks);
             let mut out = String::new();
             for color in 0..counts.len() {
                 let color_label = if let Some(ref names) = color_names {
@@ -635,62 +604,9 @@ fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: us
     });
 }
 
-// Outdated: this is from the time when there could be only 1 feature set in the index
-/*
-fn rename_labels(index_path: &PathBuf, new_names_path: &PathBuf, out_path: &PathBuf, names_to_names: bool) {
-    let mut index_input = BufReader::new(File::open(index_path)
-        .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-    let mut index = ColorIndex::load(&mut index_input);
-
-    // Read current names and apply overrides from TSV
-    let mut names: Vec<String> = index.color_names().to_vec();
-    let name_to_id: HashMap<String, usize> = if names_to_names {
-        let mut map = HashMap::new();
-        for (i, name) in names.iter().enumerate() {
-            if map.insert(name.clone(), i).is_some() {
-                panic!("Error: the index has duplicate label name \"{}\". Use internal ids (without --names-to-names) to rename labels in an index with duplicate names.", name);
-            }
-        }
-        map
-    } else {
-        HashMap::new()
-    };
-    let tsv_reader = BufReader::new(File::open(new_names_path)
-        .unwrap_or_else(|e| panic!("Could not open new names file {}: {e}", new_names_path.display())));
-    for (line_num, line) in tsv_reader.lines().enumerate() {
-        let line = line.unwrap();
-        if line.trim().is_empty() { continue; }
-        let mut cols = line.splitn(2, '\t');
-        let first_col = cols.next().unwrap_or_else(|| panic!("Line {}: missing first column", line_num + 1));
-        let new_name = cols.next().unwrap_or_else(|| panic!("Line {}: missing new name", line_num + 1)).trim_end_matches(['\n', '\r']).to_owned();
-        let id = if names_to_names {
-            *name_to_id.get(first_col.trim()).unwrap_or_else(|| panic!("Line {}: label name not found in index: {}", line_num + 1, first_col.trim()))
-        } else {
-            let id: usize = first_col.trim().parse().unwrap_or_else(|_| panic!("Line {}: label id is not a valid integer: {}", line_num + 1, first_col));
-            if id >= names.len() {
-                panic!("Line {}: label id {} is out of range (index has {} labels)", line_num + 1, id, names.len());
-            }
-            id
-        };
-        if RESERVED_COLOR_NAMES.contains(&new_name.as_str()) {
-            panic!("Line {}: \"{}\" is a reserved label name and cannot be used", line_num + 1, new_name);
-        }
-        log::info!("Renamed label {} -> {} (id {})", names[id], new_name, id);
-        names[id] = new_name;
-    }
-
-    index.rename_labels(names);
-
-    log::info!("Writing updated index to {}", out_path.display());
-    let mut out = BufWriter::new(File::create(out_path)
-        .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", out_path.display())));
-    index.serialize(&mut out);
-}
-*/
-
 // Load SBWT and LCS, or build from scratch if not given
 fn save_sbwt_and_lcs_if_requested(sbwt: &SbwtIndexVariant, lcs: &LcsArray, prefix: &Option<PathBuf>) {
-    
+
     if let Some(prefix) = prefix {
         let sbwt_out_path = PathBuf::from({ let mut s = prefix.as_os_str().to_os_string(); s.push(".sbwt"); s });
         let lcs_out_path = PathBuf::from({ let mut s = prefix.as_os_str().to_os_string(); s.push(".lcs"); s });
@@ -757,7 +673,7 @@ fn read_all_lines(filename: &Path) -> Vec<String> {
     let reader = BufReader::new(File::open(filename)
         .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", filename.display()))
     );
-    
+
     let mut lines: Vec<String> = vec![];
     for line in reader.lines() {
         lines.push(line.unwrap())
@@ -832,12 +748,16 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, feature_set_output, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
             // Create output directory if does not exist
-            std::fs::create_dir_all(out_path.parent().unwrap()).unwrap();
+            if let Some(parent) = out_path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+            }
 
             let add_rev_comps = !forward_only;
 
@@ -861,7 +781,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name, priorities);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, feature_set_output, hierarchy, &feature_set_name, priorities);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
@@ -870,18 +790,15 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, hierarchy, &feature_set_name, priorities);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, feature_set_output, hierarchy, &feature_set_name, priorities);
             }
 
         },
 
-        Subcommands::Lookup { index: index_path, k, n_threads, query_args } => {
+        Subcommands::Lookup { index: index_path, feature_set_file, k, n_threads, query_args } => {
             log::info!("Loading the index ...");
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-
             let index_loading_start = std::time::Instant::now();
-            let index = ColorIndex::load(&mut index_input);
+            let index = open_index(&index_path, &feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -896,13 +813,10 @@ fn main() {
             run_lookup_with_args(&index, n_threads, &query_args).unwrap_or_else(|e| panic!("{e}"));
         },
 
-        Subcommands::Prompt { index: index_path, k, n_threads } => {
+        Subcommands::Prompt { index: index_path, feature_set_file, k, n_threads } => {
             log::info!("Loading the index ...");
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-
             let index_loading_start = std::time::Instant::now();
-            let index = ColorIndex::load(&mut index_input);
+            let index = open_index(&index_path, &feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -917,16 +831,12 @@ fn main() {
             run_prompt_loop(&index, n_threads);
         },
 
-        Subcommands::Stats { index: index_path, feature_set } => {
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            let index = ColorIndex::load(&mut index_input);
-
-            let fs_name = feature_set.as_deref();
-            let stats = index.color_stats(fs_name).unwrap_or_else(|e| panic!("{e}"));
+        Subcommands::Stats { index: index_path, feature_set_file } => {
+            let index = open_index(&index_path, &feature_set_file);
+            let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
-            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy(fs_name).unwrap_or_else(|e| panic!("{e}")));
+            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy());
             println!("Number of k-mers:      {}", index.n_kmers());
             println!("Labeled SBWT positions: {}", stats.colored);
             println!("Unlabeled SBWT positions:  {}", stats.uncolored);
@@ -936,25 +846,20 @@ fn main() {
             println!();
             println!("{:<10}  {}", "Count", "Label name");
             println!("{:<10}  {}", stats.uncolored, "none");
-            for (id, name) in index.color_names(fs_name).unwrap_or_else(|e| panic!("{e}")).iter().enumerate() {
+            for (id, name) in index.color_names().iter().enumerate() {
                 println!("{:<10}  {}", stats.color_counts[id], name);
             }
         },
 
-        Subcommands::NodeStats { index: index_path, report_color_ids, n_threads, feature_set } => {
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            let index = ColorIndex::load(&mut index_input);
-            compute_node_stats(index, !report_color_ids, n_threads, feature_set.as_deref());
+        Subcommands::NodeStats { index: index_path, feature_set_file, report_color_ids, n_threads } => {
+            let index = open_index(&index_path, &feature_set_file);
+            compute_node_stats(index, !report_color_ids, n_threads);
         },
 
-        Subcommands::PrintHierarchy { index: index_path, feature_set } => {
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            let index = ColorIndex::load(&mut index_input);
-            let fs_name = feature_set.as_deref();
-            let names = index.color_names(fs_name).unwrap_or_else(|e| panic!("{e}"));
-            let tree = index.color_hierarchy(fs_name).unwrap_or_else(|e| panic!("{e}"));
+        Subcommands::PrintHierarchy { index: index_path, feature_set_file } => {
+            let index = open_index(&index_path, &feature_set_file);
+            let names = index.color_names();
+            let tree = index.color_hierarchy();
             let n = tree.n_nodes();
             println!("{}", n);
             for name in names {
@@ -967,8 +872,7 @@ fn main() {
             }
         },
 
-        Subcommands::AddFeatureSet { index: index_path, output, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
-            let out_path = output.unwrap_or_else(|| index_path.clone());
+        Subcommands::AddFeatureSet { index: index_path, output: fs_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --label-by-file or --label-by-seq is required");
             }
@@ -976,52 +880,55 @@ fn main() {
             let n_threads = n_threads as usize;
             let add_rev_comps = !forward_only;
 
-            log::info!("Loading the index ...");
-            let mut index_input = BufReader::new(File::open(&index_path)
+            log::info!("Loading the base index ...");
+            let mut base_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            let mut index = ColorIndex::load(&mut index_input);
-            // Release the read handle before potentially reopening the same path for writing
-            drop(index_input);
+            // Read and discard the outer HKS file header to reach the HksIndex base data
+            let mut file_id = [0_u8; 8];
+            base_input.read_exact(&mut file_id).unwrap();
+            assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID");
+            let mut type_id = [0_u8; 4];
+            base_input.read_exact(&mut type_id).unwrap();
+            assert_eq!(type_id, FIXED_INDEX_TYPE_ID, "Unsupported index type");
+            let (sbwt, lcs) = FixedKColorIndex::load_base(&mut base_input);
+            let dummy_index = FixedKColorIndex::from_parts(sbwt, lcs,
+                // Temporary placeholder feature set — only sbwt/lcs are used for coloring
+                FeatureSet { color_assignments: SimpleColorStorage::new(0, 1), hierarchy: ColorHierarchy::new_star(vec!["placeholder".to_string()]), name: String::new() }
+            );
 
-            if let Some(fof) = label_by_file {
+            let feature_set = if let Some(fof) = label_by_file {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
-                    .unwrap_or_else(|e| panic!("{e}"));
+                build::build_feature_set(&dummy_index, individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
             } else {
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                index.add_feature_set(individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
-                    .unwrap_or_else(|e| panic!("{e}"));
-            }
+                build::build_feature_set(&dummy_index, individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
+            };
 
-            if let Some(parent) = out_path.parent() {
+            if let Some(parent) = fs_out_path.parent() {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).unwrap();
                 }
             }
-            log::info!("Writing updated index to {}", out_path.display());
-            let mut out = BufWriter::new(File::create(&out_path)
-                .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", out_path.display())));
-            index.serialize(&mut out);
+            log::info!("Writing feature set to {}", fs_out_path.display());
+            let mut out = BufWriter::new(File::create(&fs_out_path)
+                .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", fs_out_path.display())));
+            feature_set.serialize_to_file(&mut out);
         },
 
-        Subcommands::LookupDebug{query: query_path, index: index_path, feature_set} => {
+        Subcommands::LookupDebug{query: query_path, index: index_path, feature_set_file} => {
             log::info!("Loading the index ...");
-            let mut index_input = BufReader::new(File::open(&index_path)
-                .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-
             let index_loading_start = std::time::Instant::now();
-            let index = ColorIndex::load(&mut index_input);
+            let index = open_index(&index_path, &feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
             log::info!("Running query debug implementation for {} ...", query_path.display());
 
-            let feature_set_id = index.resolve_feature_set_id(feature_set.as_deref()).unwrap_or_else(|e| panic!("{e}"));
             match index {
                 ColorIndex::FixedK(index) => {
-                    single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k(), feature_set_id);
+                    single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k());
                 },
             }
         }
-    } 
+    }
 }
