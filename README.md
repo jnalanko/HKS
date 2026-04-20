@@ -37,7 +37,7 @@ hks build \
   --output-prefix index
 ```
 
-This will create the index in two parts: `index.hksb` and `index.hksl`. The former contains
+This will create the index in two parts: `index.hksb` and `index.hksf`. The former contains
  the k-mer index, and the latter a labeling of the k-mers with the following hierarchy:
 
 ```
@@ -57,7 +57,7 @@ Usage: hks build [OPTIONS] -s <S> --output-prefix <OUTPUT_PREFIX>
 
 Options:
   -s <S>                               Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
-  -o, --output-prefix <OUTPUT_PREFIX>  Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).
+  -o, --output-prefix <OUTPUT_PREFIX>  Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (labeling).
       --external-memory <TEMP_DIR>     Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
       --forward-only                   Do not add reverse complemented k-mers
   -t, --n-threads <N_THREADS>          Number of parallel threads [default: 4]
@@ -96,7 +96,7 @@ To query the index built above with k-mer length 5 and the input file `example/q
 hks lookup \
     -q example/query.fasta \
     -i index.hksb \
-    --labeling-file index.hksl \
+    --labeling-file index.hksf \
     -k 5 \
     --report-query-names \
     --report-misses

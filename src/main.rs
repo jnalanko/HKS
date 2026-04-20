@@ -268,7 +268,7 @@ fn add_colors<T: sbwt::SeqStream + Send>(
 }
 
 fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> PathBuf {
-    labeling_file.unwrap_or_else(|| index_path.with_extension("hksl"))
+    labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
 }
 
 fn open_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> ColorIndex {
@@ -303,7 +303,7 @@ pub enum Subcommands {
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Advanced use")]
         unitigs: Option<PathBuf>,
 
-        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).", short = 'o', long = "output-prefix", required = true)]
+        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (labeling).", short = 'o', long = "output-prefix", required = true)]
         output_prefix: PathBuf,
 
         #[arg(help = "Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.", long = "external-memory")]
@@ -345,7 +345,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
@@ -364,7 +364,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
@@ -379,7 +379,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
     },
 
@@ -388,7 +388,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
@@ -403,7 +403,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
     },
 
@@ -448,7 +448,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
     },
 
@@ -755,7 +755,7 @@ fn main() {
             let (s, n_threads) = (s as usize, n_threads as usize);
 
             let out_path = output_prefix.with_extension("hksb");
-            let labeling_output = output_prefix.with_extension("hksl");
+            let labeling_output = output_prefix.with_extension("hksf");
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {

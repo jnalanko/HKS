@@ -29,7 +29,7 @@ fn hks() -> Command {
     cmd
 }
 
-// Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksl.
+// Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksf.
 fn build_basic_index(prefix: &Path) {
     let status = hks()
         .args(["build", "-s", "10", "--feature-file-list", "example/file_of_files.txt", "-o"])
@@ -214,7 +214,7 @@ fn lookup_basic() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -229,7 +229,7 @@ fn lookup_with_k() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["-k", "5"])
         .status()
         .unwrap();
@@ -245,7 +245,7 @@ fn lookup_report_label_ids() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -261,7 +261,7 @@ fn lookup_report_query_names() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--report-query-names"])
         .status()
         .unwrap();
@@ -277,7 +277,7 @@ fn lookup_report_misses() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--report-misses"])
         .status()
         .unwrap();
@@ -293,7 +293,7 @@ fn lookup_no_header() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--no-header"])
         .status()
         .unwrap();
@@ -309,7 +309,7 @@ fn lookup_n_threads() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["-t", "2"])
         .status()
         .unwrap();
@@ -325,7 +325,7 @@ fn lookup_batch_size() {
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--batch-size", "100"])
         .status()
         .unwrap();
@@ -343,7 +343,7 @@ fn stats_basic() {
         .args(["stats", "-i"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -360,7 +360,7 @@ fn node_stats_basic() {
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -375,7 +375,7 @@ fn node_stats_report_label_names() {
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -391,7 +391,7 @@ fn node_stats_n_threads() {
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
         .arg("--labeling-file")
-        .arg(prefix.with_extension("hksl"))
+        .arg(prefix.with_extension("hksf"))
         .args(["-t", "2"])
         .status()
         .unwrap();
