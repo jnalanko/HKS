@@ -421,7 +421,7 @@ pub enum Subcommands {
         #[arg(help = "Give input as a single FASTA file, one sequence per feature. All k-mers in this file must already be present in the index.", long = "feature-per-seq-file", help_heading = "Features", conflicts_with = "label_by_file")]
         label_by_seq: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as features. The feature name \"none\" is reserved.", long = "labels", help_heading = "Features")]
+        #[arg(help = "Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as features. The feature name \"none\" is reserved.", long = "feature-names", help_heading = "Features")]
         labels: Option<PathBuf>,
 
         #[arg(help = "Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named \"root\").", long = "feature-hierarchy", help_heading = "Features")]
