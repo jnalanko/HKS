@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
 use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtIndex, SbwtIndexVariant, SubsetMatrix, write_sbwt_index_variant};
-use single_colored_kmers::{ColorHierarchy, FeatureSet, HksIndex};
+use single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
 use parallel_queries::OutputWriter;
 
 use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
@@ -61,7 +61,7 @@ impl ColorIndex {
         match type_id {
             FIXED_INDEX_TYPE_ID => {
                 let (sbwt, lcs) = FixedKColorIndex::load_base(base_input);
-                let feature_set = FeatureSet::<SimpleColorStorage>::load_from_file(fs_input);
+                let feature_set = Labeling::<SimpleColorStorage>::load_from_file(fs_input);
                 let index = FixedKColorIndex::from_parts(sbwt, lcs, feature_set);
                 log::info!("Loaded index with s = {}", index.k());
                 ColorIndex::FixedK(index)
@@ -898,7 +898,7 @@ fn main() {
             let (sbwt, lcs) = FixedKColorIndex::load_base(&mut base_input);
             let dummy_index = FixedKColorIndex::from_parts(sbwt, lcs,
                 // Temporary placeholder feature set — only sbwt/lcs are used for coloring
-                FeatureSet { color_assignments: SimpleColorStorage::new(0, 1), hierarchy: ColorHierarchy::new_star(vec!["placeholder".to_string()]), name: String::new() }
+                Labeling { color_assignments: SimpleColorStorage::new(0, 1), hierarchy: ColorHierarchy::new_star(vec!["placeholder".to_string()]), name: String::new() }
             );
 
             let feature_set = if let Some(fof) = label_by_file {

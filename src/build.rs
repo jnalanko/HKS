@@ -15,7 +15,7 @@ use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStr
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 use crate::priority_lca::PriorityLca;
-use crate::single_colored_kmers::{ColorHierarchy, FeatureSet, HksIndex};
+use crate::single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
 use crate::traits::*;
 
 /// Build a new index from input sequences. If `priorities` is `Some`, uses
@@ -42,7 +42,7 @@ where
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    let fs = FeatureSet { color_assignments, hierarchy, name: feature_set_name.to_owned() };
+    let fs = Labeling { color_assignments, hierarchy, name: feature_set_name.to_owned() };
     HksIndex::<L, C>::new_with_feature_set(sbwt, lcs, fs)
 }
 
@@ -55,7 +55,7 @@ pub fn build_feature_set<L, C, T>(
     hierarchy: ColorHierarchy,
     feature_set_name: &str,
     priorities: Option<Vec<usize>>,
-) -> FeatureSet<C>
+) -> Labeling<C>
 where
     L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
     C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>,
@@ -67,7 +67,7 @@ where
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    FeatureSet { color_assignments, hierarchy, name: feature_set_name.to_owned() }
+    Labeling { color_assignments, hierarchy, name: feature_set_name.to_owned() }
 }
 
 /// Resolve priorities (or absence thereof) into a merge closure and run

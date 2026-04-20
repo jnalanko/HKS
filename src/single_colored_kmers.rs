@@ -13,16 +13,16 @@ use crate::traits::*;
 pub struct HksIndex<L: ContractLeft + Clone + MySerialize + From<LcsArray>, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
     lcs: L,
-    feature_set: FeatureSet<C>,
+    feature_set: Labeling<C>,
 }
 
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> HksIndex<L, C> {
 
-    pub fn feature_set(&self) -> &FeatureSet<C> {
+    pub fn feature_set(&self) -> &Labeling<C> {
         &self.feature_set
     }
 
-    pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, FeatureSet<C>) {
+    pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, Labeling<C>) {
         (self.sbwt, self.lcs, self.feature_set)
     }
 
@@ -159,12 +159,12 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     /// Build a new index from already-converted parts. Use after `new_with_feature_set`
     /// during construction, or after `load_base` + `FeatureSet::load_from_file` during loading.
-    pub fn from_parts(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L, feature_set: FeatureSet<C>) -> Self {
+    pub fn from_parts(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L, feature_set: Labeling<C>) -> Self {
         HksIndex::<L, C> { sbwt, lcs, feature_set }
     }
 
     /// Build a new index from raw construction outputs. Converts the `LcsArray` to `L`.
-    pub fn new_with_feature_set(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, feature_set: FeatureSet<C>) -> Self {
+    pub fn new_with_feature_set(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, feature_set: Labeling<C>) -> Self {
         log::info!("Indexing LCS array");
         let lcs_index = L::from(lcs);
         log::info!("Color structure construction complete");
@@ -227,7 +227,7 @@ pub struct KmerLookupIterator<'a, 'b, L: ContractLeft + Clone + MySerialize + Fr
     matching_stats_iter: MatchingStatisticsIterator<'a, 'b, SbwtIndex::<SubsetMatrix>, L>,
     index: &'a HksIndex<L, C>,
     query_pattern_length: usize,
-    feature_set: &'a FeatureSet<C>, // Cached to avoid re-fetching on every call
+    feature_set: &'a Labeling<C>, // Cached to avoid re-fetching on every call
 }
 
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Iterator for KmerLookupIterator<'_, '_, L, C> {
@@ -353,13 +353,13 @@ const FEATURE_SET_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
 const FEATURE_SET_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
-pub struct FeatureSet<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
+pub struct Labeling<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     pub color_assignments: C, // Map colex -> color id (integer)
     pub hierarchy: ColorHierarchy, // Color hierarchy for the color ids in color_assignments
     pub name: String, // Name of the feature set
 }
 
-impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> FeatureSet<C> {
+impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Labeling<C> {
     fn serialize(&self, out: &mut impl Write) {
         self.color_assignments.serialize(out);
         self.hierarchy.serialize(out);

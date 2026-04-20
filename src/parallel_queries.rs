@@ -343,7 +343,7 @@ mod tests {
     use rand_chacha::rand_core::{RngCore, SeedableRng};
     use sbwt::{BitPackedKmerSortingMem, SeqStream};
 
-    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, FeatureSet, LcsWrapper, HksIndex}, traits::ColoredKmerLookupAlgorithm};
+    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, Labeling, LcsWrapper, HksIndex}, traits::ColoredKmerLookupAlgorithm};
 
     struct HksIndexLookup<'a> {
         index: &'a HksIndex<LcsWrapper, SimpleColorStorage>,
@@ -682,7 +682,7 @@ mod tests {
 
         // Deserialize
         let (sbwt, lcs) = HksIndex::<LcsWrapper, SimpleColorStorage>::load_base(&mut base_buf.as_slice());
-        let feature_set = FeatureSet::<SimpleColorStorage>::load_from_file(&mut fs_buf.as_slice());
+        let feature_set = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_buf.as_slice());
         let loaded = HksIndex::<LcsWrapper, SimpleColorStorage>::from_parts(sbwt, lcs, feature_set);
 
         // Check structural equality
