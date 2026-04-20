@@ -297,12 +297,6 @@ pub enum Subcommands {
         #[arg(help = "A file with one fasta/fastq filename per line, one per feature", long = "feature-file-list", help_heading = "Features", conflicts_with = "label_by_seq")]
         label_by_file: Option<PathBuf>,
 
-        #[arg(help = "Give input as a single FASTA file, one sequence per feature", long = "feature-per-seq-file", help_heading = "Features", conflicts_with = "label_by_file")]
-        label_by_seq: Option<PathBuf>,
-
-        #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Advanced use")]
-        unitigs: Option<PathBuf>,
-
         #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (labeling).", short = 'o', long = "output-prefix", required = true)]
         output_prefix: PathBuf,
 
@@ -329,14 +323,22 @@ pub enum Subcommands {
         #[arg(help = "Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named \"root\").", long = "feature-hierarchy", help_heading = "Features")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Optional: a file assigning an integer priority to every node in the feature hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of features in the hierarchy.", long = "feature-priorities", help_heading = "Features")]
-        node_priorities: Option<PathBuf>,
-
         #[arg(help = "Name for the feature set", long = "feature-set-name", help_heading = "Features", default_value = "unnamed")]
         labeling_name: String,
 
         #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
         sbwt_and_lcs_save_prefix: Option<PathBuf>,
+
+        #[arg(help = "Instead of one file per feature, give input as a single FASTA file, one sequence per feature.", long = "feature-per-seq-file", help_heading = "Advanced use", conflicts_with = "label_by_file")]
+        label_by_seq: Option<PathBuf>,
+
+        #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage.", short, long, help_heading = "Advanced use")]
+        unitigs: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file assigning an integer priority to every node in the feature hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of features in the hierarchy.", long = "feature-priorities", help_heading = "Advanced use")]
+        node_priorities: Option<PathBuf>,
+
+
 
     },
 
