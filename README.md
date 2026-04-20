@@ -37,7 +37,7 @@ hks build \
   --output-prefix index
 ```
 
-This will create the index in two parts: `index.hksb` and `index.hksf`. The former contains
+This will create the index in two parts: `index.hksb` and `index.hksl`. The former contains
  the k-mer index, and the latter a labeling of the k-mers with the following hierarchy:
 
 ```
@@ -57,7 +57,7 @@ Usage: hks build [OPTIONS] -s <S> --output-prefix <OUTPUT_PREFIX>
 
 Options:
   -s <S>                                        Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
-  -o, --output-prefix <OUTPUT_PREFIX>           Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (feature set).
+  -o, --output-prefix <OUTPUT_PREFIX>           Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).
       --external-memory <TEMP_DIR>              Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
       --forward-only                            Do not add reverse complemented k-mers
   -t, --n-threads <N_THREADS>                   Number of parallel threads [default: 4]
@@ -87,7 +87,7 @@ To query the index built above with k-mer length 5 and the input file `example/q
 hks lookup \
     -q example/query.fasta \
     -i index.hksb \
-    --feature-set-file index.hksf \
+    --labeling-file index.hksl \
     -k 5 \
     --report-query-names \
     --report-misses
@@ -119,12 +119,12 @@ This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[
 The full query options are as follows:
 
 ```
-Usage: hks lookup [OPTIONS] --query <QUERY> --index <INDEX> --feature-set-file <FEATURE_SET_FILE>
+Usage: hks lookup [OPTIONS] --query <QUERY> --index <INDEX>
 
 Options:
   -q, --query <QUERY>                          A fasta/fastq query file
   -i, --index <INDEX>                          Path to the base index file
-      --feature-set-file <FEATURE_SET_FILE>    Path to the feature set file
+      --labeling-file <LABELING_FILE>    Path to the labeling file
   -t, --n-threads <N_THREADS>                  Number of parallel threads [default: 4]
   -k <K>                                       Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.
       --report-query-names                     Print query names instead of query rank integers.

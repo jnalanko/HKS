@@ -349,7 +349,7 @@ impl ColorHierarchy {
     }
 }
 
-const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
+const LABELING_FILE_MAGIC: [u8; 8] = *b"hksls0.1";
 const LABELING_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
@@ -516,14 +516,14 @@ mod tests {
             crate::build::build(sbwt, lcs, streams, 1, hierarchy, "labeling_name", None);
 
         // Sequential reference: run the simple single-threaded loop
-        let (_, lcs_seq, feature_set) = index.clone().into_parts();
-        let (mut colors, hierarchy) = (feature_set.color_assignments.clone(), feature_set.hierarchy.clone());
+        let (_, lcs_seq, labeling) = index.clone().into_parts();
+        let (mut colors, hierarchy) = (labeling.color_assignments.clone(), labeling.hierarchy.clone());
         let lcs_wrapper_seq = LcsWrapper::from(lcs_seq);
         sequential_substitute(&mut colors, s, hierarchy.tree(), &lcs_wrapper_seq);
 
         // Parallel: run substitute_lca_for_s_mer_ranges on the same initial color storage
-        let (sbwt2, lcs2, feature_set_2) = index.into_parts();
-        let (mut colors2, hierarchy2) = (feature_set_2.color_assignments.clone(), feature_set_2.hierarchy.clone());
+        let (sbwt2, lcs2, labeling_2) = index.into_parts();
+        let (mut colors2, hierarchy2) = (labeling_2.color_assignments.clone(), labeling_2.hierarchy.clone());
         let lcs_wrapper = LcsWrapper::from(lcs2);
         colors2.substitute_lca_for_s_mer_ranges(s, hierarchy2.tree(), &lcs_wrapper, n_threads);
 

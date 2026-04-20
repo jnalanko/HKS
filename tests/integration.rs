@@ -29,7 +29,7 @@ fn hks() -> Command {
     cmd
 }
 
-// Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksf.
+// Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksl.
 fn build_basic_index(prefix: &Path) {
     let status = hks()
         .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
@@ -213,8 +213,8 @@ fn lookup_basic() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -228,8 +228,8 @@ fn lookup_with_k() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["-k", "5"])
         .status()
         .unwrap();
@@ -244,8 +244,8 @@ fn lookup_report_label_ids() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -260,8 +260,8 @@ fn lookup_report_query_names() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--report-query-names"])
         .status()
         .unwrap();
@@ -276,8 +276,8 @@ fn lookup_report_misses() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--report-misses"])
         .status()
         .unwrap();
@@ -292,8 +292,8 @@ fn lookup_no_header() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--no-header"])
         .status()
         .unwrap();
@@ -308,8 +308,8 @@ fn lookup_n_threads() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["-t", "2"])
         .status()
         .unwrap();
@@ -324,8 +324,8 @@ fn lookup_batch_size() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--batch-size", "100"])
         .status()
         .unwrap();
@@ -342,8 +342,8 @@ fn stats_basic() {
     let status = hks()
         .args(["stats", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -359,8 +359,8 @@ fn node_stats_basic() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -374,8 +374,8 @@ fn node_stats_report_label_names() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["--report-label-ids"])
         .status()
         .unwrap();
@@ -390,8 +390,8 @@ fn node_stats_n_threads() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--feature-set-file")
-        .arg(prefix.with_extension("hksf"))
+        .arg("--labeling-file")
+        .arg(prefix.with_extension("hksl"))
         .args(["-t", "2"])
         .status()
         .unwrap();

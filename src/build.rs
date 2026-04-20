@@ -28,7 +28,7 @@ pub fn build<L, C, T>(
     input_streams: Vec<T>,
     n_threads: usize,
     hierarchy: ColorHierarchy,
-    feature_set_name: &str,
+    labeling_name: &str,
     priorities: Option<Vec<usize>>,
 ) -> HksIndex<L, C>
 where
@@ -42,18 +42,18 @@ where
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    let fs = Labeling { color_assignments, hierarchy, name: feature_set_name.to_owned() };
+    let fs = Labeling { color_assignments, hierarchy, name: labeling_name.to_owned() };
     HksIndex::<L, C>::new_with_labeling(sbwt, lcs, fs)
 }
 
-/// Build a new feature set from an existing index (sbwt + lcs) and input streams.
-/// The result can be serialized to a standalone feature set file.
-pub fn build_feature_set<L, C, T>(
+/// Build a new labeling from an existing index (sbwt + lcs) and input streams.
+/// The result can be serialized to a standalone labeling file.
+pub fn build_labeling<L, C, T>(
     index: &HksIndex<L, C>,
     input_streams: Vec<T>,
     n_threads: usize,
     hierarchy: ColorHierarchy,
-    feature_set_name: &str,
+    labeling_name: &str,
     priorities: Option<Vec<usize>>,
 ) -> Labeling<C>
 where
@@ -67,7 +67,7 @@ where
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    Labeling { color_assignments, hierarchy, name: feature_set_name.to_owned() }
+    Labeling { color_assignments, hierarchy, name: labeling_name.to_owned() }
 }
 
 /// Resolve priorities (or absence thereof) into a merge closure and run

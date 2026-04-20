@@ -61,8 +61,8 @@ impl ColorIndex {
         match type_id {
             FIXED_INDEX_TYPE_ID => {
                 let (sbwt, lcs) = FixedKColorIndex::load_base(base_input);
-                let feature_set = Labeling::<SimpleColorStorage>::load_from_file(fs_input);
-                let index = FixedKColorIndex::from_parts(sbwt, lcs, feature_set);
+                let labeling = Labeling::<SimpleColorStorage>::load_from_file(fs_input);
+                let index = FixedKColorIndex::from_parts(sbwt, lcs, labeling);
                 log::info!("Loaded index with s = {}", index.k());
                 ColorIndex::FixedK(index)
             },
@@ -230,12 +230,12 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     individual_streams: Vec<T>,
     n_threads: usize,
     index_out_path: PathBuf,
-    feature_set_out_path: PathBuf,
+    labeling_out_path: PathBuf,
     hierarchy: ColorHierarchy,
-    feature_set_name: &str,
+    labeling_name: &str,
     priorities: Option<Vec<usize>>,
 ) {
-    let index: FixedKColorIndex = build::build(sbwt, lcs, individual_streams, n_threads, hierarchy, feature_set_name, priorities);
+    let index: FixedKColorIndex = build::build(sbwt, lcs, individual_streams, n_threads, hierarchy, labeling_name, priorities);
     let color_index = ColorIndex::FixedK(index);
 
     if let Some(parent) = index_out_path.parent() {
@@ -249,34 +249,34 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     color_index.serialize_base(&mut out);
     drop(out);
 
-    if let Some(parent) = feature_set_out_path.parent() {
+    if let Some(parent) = labeling_out_path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).unwrap();
         }
     }
-    log::info!("Writing feature set to {}", feature_set_out_path.display());
-    let mut fs_out = BufWriter::new(File::create(&feature_set_out_path)
-        .unwrap_or_else(|e| panic!("Could not create feature set file {}: {e}", feature_set_out_path.display())));
+    log::info!("Writing labeling to {}", labeling_out_path.display());
+    let mut labeling_out = BufWriter::new(File::create(&labeling_out_path)
+        .unwrap_or_else(|e| panic!("Could not create labeling file {}: {e}", labeling_out_path.display())));
     match &color_index {
-        ColorIndex::FixedK(index) => index.labeling().serialize_to_file(&mut fs_out),
+        ColorIndex::FixedK(index) => index.labeling().serialize_to_file(&mut labeling_out),
     }
 
     let index_size = std::fs::metadata(&index_out_path).unwrap().len() as f64;
-    let fs_size = std::fs::metadata(&feature_set_out_path).unwrap().len() as f64;
+    let labeling_size = std::fs::metadata(&labeling_out_path).unwrap().len() as f64;
     log::info!("Base index size on disk: {}", human_bytes::human_bytes(index_size));
-    log::info!("Feature set size on disk: {}", human_bytes::human_bytes(fs_size));
+    log::info!("Labeling size on disk: {}", human_bytes::human_bytes(labeling_size));
 }
 
-fn resolve_feature_set_file(index_path: &PathBuf, feature_set_file: Option<PathBuf>) -> PathBuf {
-    feature_set_file.unwrap_or_else(|| index_path.with_extension("hksf"))
+fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> PathBuf {
+    labeling_file.unwrap_or_else(|| index_path.with_extension("hksl"))
 }
 
-fn open_index(index_path: &PathBuf, feature_set_file: Option<PathBuf>) -> ColorIndex {
-    let fs_path = resolve_feature_set_file(index_path, feature_set_file);
+fn open_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> ColorIndex {
+    let labeling_path = resolve_labeling_file(index_path, labeling_file);
     let mut base_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-    let mut fs_input = BufReader::new(File::open(&fs_path)
-        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", fs_path.display())));
+    let mut fs_input = BufReader::new(File::open(&labeling_path)
+        .unwrap_or_else(|e| panic!("Could not open labeling file {}: {e}", labeling_path.display())));
     ColorIndex::load(&mut base_input, &mut fs_input)
 }
 
@@ -303,7 +303,7 @@ pub enum Subcommands {
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
         unitigs: Option<PathBuf>,
 
-        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (feature set).", short = 'o', long = "output-prefix", required = true)]
+        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).", short = 'o', long = "output-prefix", required = true)]
         output_prefix: PathBuf,
 
         #[arg(help = "Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.", long = "external-memory")]
@@ -332,8 +332,8 @@ pub enum Subcommands {
         #[arg(help = "Optional: a file assigning an integer priority to every node in the hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of labels in the hierarchy.", long = "node-priorities", help_heading = "Input")]
         node_priorities: Option<PathBuf>,
 
-        #[arg(help = "Name for the feature set", long = "feature-set-name", help_heading = "Input", default_value = "unnamed")]
-        feature_set_name: String,
+        #[arg(help = "Name for the labeling", long = "labeling-name", help_heading = "Input", default_value = "unnamed")]
+        labeling_name: String,
 
         #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
         sbwt_and_lcs_save_prefix: Option<PathBuf>,
@@ -345,8 +345,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
@@ -364,8 +364,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: Option<u64>,
@@ -379,8 +379,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
     },
 
     #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= k <= s")]
@@ -388,8 +388,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
 
         #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
         report_color_ids: bool,
@@ -403,16 +403,16 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
     },
 
-    #[command(arg_required_else_help = true, about = "Build a new feature set for an existing base index and write it to a file.")]
-    AddFeatureSet {
+    #[command(arg_required_else_help = true, about = "Build a new labeling for an existing base index and write it to a file.")]
+    AddLabeling {
         #[arg(help = "Path to the existing base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Output filename for the new feature set file", short, long, required = true)]
+        #[arg(help = "Output filename for the new labeling file", short, long, required = true)]
         output: PathBuf,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per label. All k-mers in these files must already be present in the index.", long, help_heading = "Input", conflicts_with = "label_by_seq")]
@@ -427,8 +427,8 @@ pub enum Subcommands {
         #[arg(help = "Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named \"root\").", long = "hierarchy", help_heading = "Input")]
         hierarchy: Option<PathBuf>,
 
-        #[arg(help = "Name for the new feature set.", long = "feature-set-name", required = true)]
-        feature_set_name: String,
+        #[arg(help = "Name for the new labeling.", long = "labeling-name", required = true)]
+        labeling_name: String,
 
         #[arg(help = "Optional: a file assigning an integer priority to every node in the hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.", long = "node-priorities", help_heading = "Input")]
         node_priorities: Option<PathBuf>,
@@ -448,8 +448,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
-        feature_set_file: Option<PathBuf>,
+        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksl.", long = "labeling-file")]
+        labeling_file: Option<PathBuf>,
     },
 
 }
@@ -750,12 +750,12 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, labeling_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
             let out_path = output_prefix.with_extension("hksb");
-            let feature_set_output = output_prefix.with_extension("hksf");
+            let labeling_output = output_prefix.with_extension("hksl");
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {
@@ -786,7 +786,7 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, feature_set_output, hierarchy, &feature_set_name, priorities);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, labeling_output, hierarchy, &labeling_name, priorities);
             } else {
                 // We load the coloring input first so we fail early if there is something wrong with it
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
@@ -795,15 +795,15 @@ fn main() {
                 let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
                 save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
                 let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, feature_set_output, hierarchy, &feature_set_name, priorities);
+                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, labeling_output, hierarchy, &labeling_name, priorities);
             }
 
         },
 
-        Subcommands::Lookup { index: index_path, feature_set_file, k, n_threads, query_args } => {
+        Subcommands::Lookup { index: index_path, labeling_file, k, n_threads, query_args } => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, feature_set_file);
+            let index = open_index(&index_path, labeling_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -818,10 +818,10 @@ fn main() {
             run_lookup_with_args(&index, n_threads, &query_args).unwrap_or_else(|e| panic!("{e}"));
         },
 
-        Subcommands::Prompt { index: index_path, feature_set_file, k, n_threads } => {
+        Subcommands::Prompt { index: index_path, labeling_file, k, n_threads } => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, feature_set_file);
+            let index = open_index(&index_path, labeling_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -836,8 +836,8 @@ fn main() {
             run_prompt_loop(&index, n_threads);
         },
 
-        Subcommands::Stats { index: index_path, feature_set_file } => {
-            let index = open_index(&index_path, feature_set_file);
+        Subcommands::Stats { index: index_path, labeling_file } => {
+            let index = open_index(&index_path, labeling_file);
             let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
@@ -856,13 +856,13 @@ fn main() {
             }
         },
 
-        Subcommands::NodeStats { index: index_path, feature_set_file, report_color_ids, n_threads } => {
-            let index = open_index(&index_path, feature_set_file);
+        Subcommands::NodeStats { index: index_path, labeling_file, report_color_ids, n_threads } => {
+            let index = open_index(&index_path, labeling_file);
             compute_node_stats(index, !report_color_ids, n_threads);
         },
 
-        Subcommands::PrintHierarchy { index: index_path, feature_set_file } => {
-            let index = open_index(&index_path, feature_set_file);
+        Subcommands::PrintHierarchy { index: index_path, labeling_file } => {
+            let index = open_index(&index_path, labeling_file);
             let names = index.color_names();
             let tree = index.color_hierarchy();
             let n = tree.n_nodes();
@@ -877,7 +877,7 @@ fn main() {
             }
         },
 
-        Subcommands::AddFeatureSet { index: index_path, output: fs_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, feature_set_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
+        Subcommands::AddLabeling { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --label-by-file or --label-by-seq is required");
             }
@@ -901,31 +901,31 @@ fn main() {
                 Labeling { color_assignments: SimpleColorStorage::new(0, 1), hierarchy: ColorHierarchy::new_star(vec!["placeholder".to_string()]), name: String::new() }
             );
 
-            let feature_set = if let Some(fof) = label_by_file {
+            let labeling = if let Some(fof) = label_by_file {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_feature_set(&dummy_index, individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
+                build::build_labeling(&dummy_index, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
             } else {
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_feature_set(&dummy_index, individual_streams, n_threads, hierarchy, &feature_set_name, priorities)
+                build::build_labeling(&dummy_index, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
             };
 
-            if let Some(parent) = fs_out_path.parent() {
+            if let Some(parent) = labeling_out_path.parent() {
                 if !parent.as_os_str().is_empty() {
                     std::fs::create_dir_all(parent).unwrap();
                 }
             }
-            log::info!("Writing feature set to {}", fs_out_path.display());
-            let mut out = BufWriter::new(File::create(&fs_out_path)
-                .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", fs_out_path.display())));
-            feature_set.serialize_to_file(&mut out);
+            log::info!("Writing labeling to {}", labeling_out_path.display());
+            let mut out = BufWriter::new(File::create(&labeling_out_path)
+                .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", labeling_out_path.display())));
+            labeling.serialize_to_file(&mut out);
         },
 
-        Subcommands::LookupDebug{query: query_path, index: index_path, feature_set_file} => {
+        Subcommands::LookupDebug{query: query_path, index: index_path, labeling_file} => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, feature_set_file);
+            let index = open_index(&index_path, labeling_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
             log::info!("Running query debug implementation for {} ...", query_path.display());
 
