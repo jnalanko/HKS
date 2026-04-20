@@ -32,8 +32,8 @@ The `example/` directory contains a tiny example dataset with four files A.fna, 
 ```bash
 hks build \
   -s 10 \
-  --label-by-file example/file_of_files.txt \
-  --hierarchy example/hierarchy.txt \
+  --feature-file-list example/file_of_files.txt \
+  --feature-hierarchy example/hierarchy.txt \
   --output-prefix index
 ```
 
@@ -64,11 +64,11 @@ Options:
   -h, --help                                    Print help
 
 Input:
-      --label-by-file <LABEL_BY_FILE>  A file with one fasta/fastq filename per line, one per label
-      --label-by-seq <LABEL_BY_SEQ>    Give input as a single FASTA file, one sequence per label
-  -u, --unitigs <UNITIGS>              Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
-      --names <NAMES>                  Optional: a file with one name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name "none" is reserved and cannot be used.
-      --hierarchy <HIERARCHY>          Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named "root").
+      --feature-file-list <FEATURE_FILE_LIST>      A file with one fasta/fastq filename per line, one per feature
+      --feature-per-seq-file <FEATURE_PER_SEQ_FILE> Give input as a single FASTA file, one sequence per feature
+  -u, --unitigs <UNITIGS>                          Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
+      --feature-names <FEATURE_NAMES>              Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name "none" is reserved and cannot be used.
+      --feature-hierarchy <FEATURE_HIERARCHY>      Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named "root").
 
 Advanced use:
       --load-sbwt <SBWT_PATH>
@@ -139,7 +139,7 @@ Advanced:
 
 ### Hierarchy file format
 
-By default, HKS uses a star topology: all labels are children of a single root node. The `--hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--names` must appear in at least one edge.
+By default, HKS uses a star topology: all features are children of a single root node. The `--feature-hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child feature> <parent feature>` (whitespace-separated). Every feature provided to the build command with `--feature-names` must appear in at least one edge.
 
 See `example/hierarchy.txt` for an example.
 

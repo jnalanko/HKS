@@ -32,7 +32,7 @@ fn hks() -> Command {
 // Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksl.
 fn build_basic_index(prefix: &Path) {
     let status = hks()
-        .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
+        .args(["build", "-s", "10", "--feature-file-list", "example/file_of_files.txt", "-o"])
         .arg(prefix)
         .status()
         .unwrap();
@@ -45,7 +45,7 @@ fn build_basic_index(prefix: &Path) {
 fn build_label_by_file() {
     let dir = tmp_dir();
     let status = hks()
-        .args(["build", "-s", "10", "--label-by-file", "example/file_of_files.txt", "-o"])
+        .args(["build", "-s", "10", "--feature-file-list", "example/file_of_files.txt", "-o"])
         .arg(dir.join("index"))
         .status()
         .unwrap();
@@ -62,7 +62,7 @@ fn build_label_by_seq() {
     )
     .unwrap();
     let status = hks()
-        .args(["build", "-s", "10", "--label-by-seq"])
+        .args(["build", "-s", "10", "--feature-per-seq-file"])
         .arg(&combined)
         .args(["-o"])
         .arg(dir.join("index"))
@@ -79,9 +79,9 @@ fn build_with_hierarchy() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
-            "--hierarchy",
+            "--feature-hierarchy",
             "example/hierarchy.txt",
             "-o",
         ])
@@ -101,9 +101,9 @@ fn build_with_custom_labels() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
-            "--names",
+            "--feature-names",
         ])
         .arg(&labels_file)
         .args(["-o"])
@@ -130,7 +130,7 @@ fn build_with_unitigs() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
             "--unitigs",
         ])
@@ -150,7 +150,7 @@ fn build_forward_only() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
             "--forward-only",
             "-o",
@@ -169,7 +169,7 @@ fn build_n_threads() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
             "-t",
             "2",
@@ -191,7 +191,7 @@ fn build_external_memory() {
             "build",
             "-s",
             "10",
-            "--label-by-file",
+            "--feature-file-list",
             "example/file_of_files.txt",
             "--external-memory",
         ])
