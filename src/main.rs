@@ -267,11 +267,16 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     log::info!("Feature set size on disk: {}", human_bytes::human_bytes(fs_size));
 }
 
-fn open_index(index_path: &PathBuf, feature_set_file: &PathBuf) -> ColorIndex {
+fn resolve_feature_set_file(index_path: &PathBuf, feature_set_file: Option<PathBuf>) -> PathBuf {
+    feature_set_file.unwrap_or_else(|| index_path.with_extension("hksf"))
+}
+
+fn open_index(index_path: &PathBuf, feature_set_file: Option<PathBuf>) -> ColorIndex {
+    let fs_path = resolve_feature_set_file(index_path, feature_set_file);
     let mut base_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-    let mut fs_input = BufReader::new(File::open(feature_set_file)
-        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", feature_set_file.display())));
+    let mut fs_input = BufReader::new(File::open(&fs_path)
+        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", fs_path.display())));
     ColorIndex::load(&mut base_input, &mut fs_input)
 }
 
@@ -340,8 +345,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         k: Option<u64>,
@@ -359,8 +364,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
         k: Option<u64>,
@@ -374,8 +379,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
     },
 
     #[command(about = "Print how the number of s-mers for each node in the hierarchy, for all 1 <= k <= s")]
@@ -383,8 +388,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
 
         #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
         report_color_ids: bool,
@@ -398,8 +403,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
     },
 
     #[command(arg_required_else_help = true, about = "Build a new feature set for an existing base index and write it to a file.")]
@@ -443,8 +448,8 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the feature set file", long = "feature-set-file", required = true)]
-        feature_set_file: PathBuf,
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
+        feature_set_file: Option<PathBuf>,
     },
 
 }
@@ -798,7 +803,7 @@ fn main() {
         Subcommands::Lookup { index: index_path, feature_set_file, k, n_threads, query_args } => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -816,7 +821,7 @@ fn main() {
         Subcommands::Prompt { index: index_path, feature_set_file, k, n_threads } => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
 
             let ColorIndex::FixedK(index_inner) = index;
@@ -832,7 +837,7 @@ fn main() {
         },
 
         Subcommands::Stats { index: index_path, feature_set_file } => {
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             let stats = index.color_stats();
             println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
             println!("k:                     {}", index.k());
@@ -852,12 +857,12 @@ fn main() {
         },
 
         Subcommands::NodeStats { index: index_path, feature_set_file, report_color_ids, n_threads } => {
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             compute_node_stats(index, !report_color_ids, n_threads);
         },
 
         Subcommands::PrintHierarchy { index: index_path, feature_set_file } => {
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             let names = index.color_names();
             let tree = index.color_hierarchy();
             let n = tree.n_nodes();
@@ -920,7 +925,7 @@ fn main() {
         Subcommands::LookupDebug{query: query_path, index: index_path, feature_set_file} => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, &feature_set_file);
+            let index = open_index(&index_path, feature_set_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
             log::info!("Running query debug implementation for {} ...", query_path.display());
 

@@ -37,7 +37,8 @@ hks build \
   --output-prefix index
 ```
 
-This indexes the data with the following label hierarchy.
+This will create the index in two parts: `index.hksb` and `index.hksf`. The former contains
+ the k-mer index, and the latter a labeling of the k-mers with the following hierarchy:
 
 ```
         root
