@@ -34,8 +34,7 @@ hks build \
   -s 10 \
   --label-by-file example/file_of_files.txt \
   --hierarchy example/hierarchy.txt \
-  --output index.hksb \
-  --feature-set-output index.hkfs
+  --output-prefix index
 ```
 
 This indexes the data with the following label hierarchy.
@@ -53,16 +52,15 @@ A.fna  B.fna
 The full build options are as follows:
 
 ```
-Usage: hks build [OPTIONS] -s <S> --output <OUTPUT> --feature-set-output <FEATURE_SET_OUTPUT>
+Usage: hks build [OPTIONS] -s <S> --output-prefix <OUTPUT_PREFIX>
 
 Options:
-  -s <S>                                          Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
-  -o, --output <OUTPUT>                           Output filename for the base index (SBWT + LCS)
-      --feature-set-output <FEATURE_SET_OUTPUT>   Output filename for the feature set
-      --external-memory <TEMP_DIR>                Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
-      --forward-only                              Do not add reverse complemented k-mers
-  -t, --n-threads <N_THREADS>                     Number of parallel threads [default: 4]
-  -h, --help                                      Print help
+  -s <S>                                        Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
+  -o, --output-prefix <OUTPUT_PREFIX>           Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (feature set).
+      --external-memory <TEMP_DIR>              Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
+      --forward-only                            Do not add reverse complemented k-mers
+  -t, --n-threads <N_THREADS>                   Number of parallel threads [default: 4]
+  -h, --help                                    Print help
 
 Input:
       --label-by-file <LABEL_BY_FILE>  A file with one fasta/fastq filename per line, one per label
@@ -88,7 +86,7 @@ To query the index built above with k-mer length 5 and the input file `example/q
 hks lookup \
     -q example/query.fasta \
     -i index.hksb \
-    --feature-set-file index.hkfs \
+    --feature-set-file index.hksf \
     -k 5 \
     --report-query-names \
     --report-misses

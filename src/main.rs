@@ -298,11 +298,8 @@ pub enum Subcommands {
         #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage", short, long, help_heading = "Input")]
         unitigs: Option<PathBuf>,
 
-        #[arg(help = "Output filename for the base index (SBWT + LCS)", short, long, required = true)]
-        output: PathBuf,
-
-        #[arg(help = "Output filename for the feature set", long = "feature-set-output", required = true)]
-        feature_set_output: PathBuf,
+        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (feature set).", short = 'o', long = "output-prefix", required = true)]
+        output_prefix: PathBuf,
 
         #[arg(help = "Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.", long = "external-memory")]
         temp_dir: Option<PathBuf>,
@@ -748,9 +745,12 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output: out_path, feature_set_output, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
+        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, labels: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, feature_set_name} => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
+
+            let out_path = output_prefix.with_extension("hksb");
+            let feature_set_output = output_prefix.with_extension("hksf");
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {
