@@ -18,7 +18,7 @@ pub struct HksIndex<L: ContractLeft + Clone + MySerialize + From<LcsArray>, C: C
 
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> HksIndex<L, C> {
 
-    pub fn feature_set(&self) -> &Labeling<C> {
+    pub fn labeling(&self) -> &Labeling<C> {
         &self.labeling
     }
 
@@ -58,7 +58,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     }
 
     /// Load sbwt and lcs from a base index file. Use `from_parts` to combine with a loaded
-    /// `FeatureSet` into a full `HksIndex`.
+    /// `Labeling` into a full `HksIndex`.
     pub fn load_base(mut input: &mut impl Read) -> (SbwtIndex<SubsetMatrix>, L) {
         let mut magic = [0_u8; 4];
         input.read_exact(&mut magic).unwrap();
@@ -154,21 +154,21 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         for _ in 0..k-1 {
             ms_iter.next(); // If the iterator ends early, will keep returning None
         }
-        KmerLookupIterator { matching_stats_iter: ms_iter, index: self, query_pattern_length: k, feature_set: &self.labeling }
+        KmerLookupIterator { matching_stats_iter: ms_iter, index: self, query_pattern_length: k, labeling: &self.labeling }
     }
 
-    /// Build a new index from already-converted parts. Use after `new_with_feature_set`
+    /// Build a new index from already-converted parts. Use after `new_with_labeling`
     /// during construction, or after `load_base` + `FeatureSet::load_from_file` during loading.
-    pub fn from_parts(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L, feature_set: Labeling<C>) -> Self {
-        HksIndex::<L, C> { sbwt, lcs, labeling: feature_set }
+    pub fn from_parts(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L, labeling: Labeling<C>) -> Self {
+        HksIndex::<L, C> { sbwt, lcs, labeling }
     }
 
     /// Build a new index from raw construction outputs. Converts the `LcsArray` to `L`.
-    pub fn new_with_feature_set(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, feature_set: Labeling<C>) -> Self {
+    pub fn new_with_labeling(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, labeling: Labeling<C>) -> Self {
         log::info!("Indexing LCS array");
         let lcs_index = L::from(lcs);
         log::info!("Color structure construction complete");
-        HksIndex::<L, C> { sbwt, lcs: lcs_index, labeling: feature_set }
+        HksIndex::<L, C> { sbwt, lcs: lcs_index, labeling }
     }
 
     pub fn n_sbwt_sets(&self) -> usize {
@@ -184,8 +184,8 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     // The i-th element in the vector is the number of s-mer assigned
     // to color i. NOTE: build_sbwt_select() must have been called before running this.
     pub fn node_stats(&self, s: usize, dummy_marks: &BitSlice) -> Vec<usize> {
-        let feature_set = &self.labeling;
-        let mut counts = vec![0; feature_set.hierarchy.n_nodes()];
+        let labeling = &self.labeling;
+        let mut counts = vec![0; labeling.hierarchy.n_nodes()];
         assert!(s <= self.sbwt.k());
         let n = self.n_sbwt_sets();
 
@@ -202,13 +202,13 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                     // We must only count this if the dummy has length at least s.
                     let dummy_len = self.sbwt.access_kmer(run_start).iter().filter(|c| **c != b'$').count();
                     if dummy_len >= s {
-                        lca = feature_set.hierarchy.tree().lca_options(lca, feature_set.color_assignments.get_color(run_start));
+                        lca = labeling.hierarchy.tree().lca_options(lca, labeling.color_assignments.get_color(run_start));
                     }
                 } else {
                     // Since the length of the range is at least 2, all s-mers in the range
                     // are dollar-free: otherwise we would have a duplicate dummy.
                     for pos in run_start..run_end {
-                        lca = feature_set.hierarchy.tree().lca_options(lca, feature_set.color_assignments.get_color(pos));
+                        lca = labeling.hierarchy.tree().lca_options(lca, labeling.color_assignments.get_color(pos));
                     }
                 }
                 if let Some(x) = lca {
@@ -227,7 +227,7 @@ pub struct KmerLookupIterator<'a, 'b, L: ContractLeft + Clone + MySerialize + Fr
     matching_stats_iter: MatchingStatisticsIterator<'a, 'b, SbwtIndex::<SubsetMatrix>, L>,
     index: &'a HksIndex<L, C>,
     query_pattern_length: usize,
-    feature_set: &'a Labeling<C>, // Cached to avoid re-fetching on every call
+    labeling: &'a Labeling<C>, // Cached to avoid re-fetching on every call
 }
 
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Iterator for KmerLookupIterator<'_, '_, L, C> {
@@ -246,7 +246,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
             }
 
             let lcs = &self.index.lcs;
-            let label_tree = &self.feature_set.hierarchy.tree;
+            let label_tree = &self.labeling.hierarchy.tree;
             let root_id = label_tree.root();
 
             let mut color = self.index.get_color_of_range(range.clone());
@@ -349,8 +349,8 @@ impl ColorHierarchy {
     }
 }
 
-const FEATURE_SET_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
-const FEATURE_SET_FILE_VERSION: u32 = 1;
+const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
+const LABELING_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct Labeling<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
@@ -381,22 +381,22 @@ impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Labeling<
     }
 
     pub fn serialize_to_file(&self, mut out: &mut impl Write) {
-        out.write_all(&FEATURE_SET_FILE_MAGIC).unwrap();
-        out.write_all(&FEATURE_SET_FILE_VERSION.to_le_bytes()).unwrap();
+        out.write_all(&LABELING_FILE_MAGIC).unwrap();
+        out.write_all(&LABELING_FILE_VERSION.to_le_bytes()).unwrap();
         self.serialize(out);
     }
 
     pub fn load_from_file(mut input: &mut impl Read) -> Self {
         let mut magic = [0_u8; 8];
         input.read_exact(&mut magic).unwrap();
-        if magic != FEATURE_SET_FILE_MAGIC {
-            panic!("Error loading feature set: invalid file format (magic constant mismatch)");
+        if magic != LABELING_FILE_MAGIC {
+            panic!("Error loading labeling: invalid file format (magic constant mismatch)");
         }
         let mut version_bytes = [0_u8; 4];
         input.read_exact(&mut version_bytes).unwrap();
         let version = u32::from_le_bytes(version_bytes);
-        if version != FEATURE_SET_FILE_VERSION {
-            panic!("Error loading feature set: wrong version (found {}, expected {})", version, FEATURE_SET_FILE_VERSION);
+        if version != LABELING_FILE_VERSION {
+            panic!("Error loading labeling: wrong version (found {}, expected {})", version, LABELING_FILE_VERSION);
         }
         Self::load(input)
     }
@@ -413,7 +413,7 @@ pub struct ColorStats {
 }
 
 pub struct SingleColoredKmersShort<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
-    inner: HksIndex<L,C>, // For each feature set, k-mers sharing an s-mer have been made to have the same color: the LCA in the color hierarchy
+    inner: HksIndex<L,C>, // For each labeling, k-mers sharing an s-mer have been made to have the same color: the LCA in the color hierarchy
     k: usize, // the query k-mer length
 }
 
@@ -423,7 +423,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync +
         assert!(k <= index.sbwt.k());
         if k < index.sbwt.k() {
             let fs = &mut index.labeling;
-            log::info!("Preprocessing colors for {}-mer queries for feature set: {}", k, fs.name);
+            log::info!("Preprocessing colors for {}-mer queries for labeling: {}", k, fs.name);
             fs.color_assignments.substitute_lca_for_s_mer_ranges(k, fs.hierarchy.tree(), &index.lcs, n_threads);
         }
 
@@ -513,7 +513,7 @@ mod tests {
             .collect();
 
         let index: HksIndex<LcsWrapper, SimpleColorStorage> =
-            crate::build::build(sbwt, lcs, streams, 1, hierarchy, "feature_set_name", None);
+            crate::build::build(sbwt, lcs, streams, 1, hierarchy, "labeling_name", None);
 
         // Sequential reference: run the simple single-threaded loop
         let (_, lcs_seq, feature_set) = index.clone().into_parts();

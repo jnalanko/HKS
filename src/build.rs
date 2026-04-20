@@ -43,7 +43,7 @@ where
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
     let fs = Labeling { color_assignments, hierarchy, name: feature_set_name.to_owned() };
-    HksIndex::<L, C>::new_with_feature_set(sbwt, lcs, fs)
+    HksIndex::<L, C>::new_with_labeling(sbwt, lcs, fs)
 }
 
 /// Build a new feature set from an existing index (sbwt + lcs) and input streams.

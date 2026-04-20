@@ -509,7 +509,7 @@ mod tests {
                 let end: usize = fields.next().unwrap().parse().unwrap();
                 let color_token = fields.next().unwrap();
                 let c = color_token.parse::<usize>().unwrap();
-                let color = if c == sck.feature_set().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
+                let color = if c == sck.labeling().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
                 for i in start..end {
                     found_kmers[seq_id].push((i, color));
                 }
@@ -622,7 +622,7 @@ mod tests {
                 let end: usize = fields.next().unwrap().parse().unwrap();
                 let color_token = fields.next().unwrap();
                 let c = color_token.parse::<usize>().unwrap();
-                let color = if c == sck.feature_set().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
+                let color = if c == sck.labeling().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
                 for i in start..end {
                     found_kmers[seq_id].push((i, color));
                 }
@@ -678,7 +678,7 @@ mod tests {
         let mut base_buf = Vec::<u8>::new();
         original.serialize_base(&mut base_buf);
         let mut fs_buf = Vec::<u8>::new();
-        original.feature_set().serialize_to_file(&mut fs_buf);
+        original.labeling().serialize_to_file(&mut fs_buf);
 
         // Deserialize
         let (sbwt, lcs) = HksIndex::<LcsWrapper, SimpleColorStorage>::load_base(&mut base_buf.as_slice());
@@ -688,8 +688,8 @@ mod tests {
         // Check structural equality
         assert_eq!(original.k(), loaded.k());
         assert_eq!(original.n_kmers(), loaded.n_kmers());
-        assert_eq!(original.feature_set().hierarchy.names(), loaded.feature_set().hierarchy.names());
-        assert_eq!(original.feature_set().hierarchy.tree(), loaded.feature_set().hierarchy.tree());
+        assert_eq!(original.labeling().hierarchy.names(), loaded.labeling().hierarchy.names());
+        assert_eq!(original.labeling().hierarchy.tree(), loaded.labeling().hierarchy.tree());
 
         // Check every SBWT position has the same color
         for i in 0..original.n_kmers() {

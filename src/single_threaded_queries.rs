@@ -22,7 +22,7 @@ where L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAc
       C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>
 {
 
-    let root_id = index.feature_set().hierarchy.tree().root();
+    let root_id = index.labeling().hierarchy.tree().root();
     let mut reader = DynamicFastXReader::from_file(&query_path)
         .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
     let mut seq_id = 0_usize;

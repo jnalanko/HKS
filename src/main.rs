@@ -98,19 +98,19 @@ impl ColorIndex {
 
     fn color_names(&self) -> &[String] {
         match self {
-            ColorIndex::FixedK(index) => index.feature_set().hierarchy.names(),
+            ColorIndex::FixedK(index) => index.labeling().hierarchy.names(),
         }
     }
 
     fn color_hierarchy(&self) -> &LcaTree {
         match self {
-            ColorIndex::FixedK(index) => index.feature_set().hierarchy.tree(),
+            ColorIndex::FixedK(index) => index.labeling().hierarchy.tree(),
         }
     }
 
     fn n_colors_in_hierarchy(&self) -> usize {
         match self {
-            ColorIndex::FixedK(index) => index.feature_set().hierarchy.n_nodes(),
+            ColorIndex::FixedK(index) => index.labeling().hierarchy.n_nodes(),
         }
     }
 }
@@ -258,7 +258,7 @@ fn add_colors<T: sbwt::SeqStream + Send>(
     let mut fs_out = BufWriter::new(File::create(&feature_set_out_path)
         .unwrap_or_else(|e| panic!("Could not create feature set file {}: {e}", feature_set_out_path.display())));
     match &color_index {
-        ColorIndex::FixedK(index) => index.feature_set().serialize_to_file(&mut fs_out),
+        ColorIndex::FixedK(index) => index.labeling().serialize_to_file(&mut fs_out),
     }
 
     let index_size = std::fs::metadata(&index_out_path).unwrap().len() as f64;
@@ -527,7 +527,7 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
     let color_names: Option<Vec<String>> = if args.report_label_ids {
         None
     } else {
-        Some(index.inner().feature_set().hierarchy.names().to_vec())
+        Some(index.inner().labeling().hierarchy.names().to_vec())
     };
     let reader = open_fastx(&args.query)?;
 
