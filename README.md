@@ -56,21 +56,30 @@ The full build options are as follows:
 Usage: hks build [OPTIONS] -s <S> --output-prefix <OUTPUT_PREFIX>
 
 Options:
-  -s <S>                                        Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
-  -o, --output-prefix <OUTPUT_PREFIX>           Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).
-      --external-memory <TEMP_DIR>              Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
-      --forward-only                            Do not add reverse complemented k-mers
-  -t, --n-threads <N_THREADS>                   Number of parallel threads [default: 4]
-  -h, --help                                    Print help
+  -s <S>                               Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
+  -o, --output-prefix <OUTPUT_PREFIX>  Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksl (labeling).
+      --external-memory <TEMP_DIR>     Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
+      --forward-only                   Do not add reverse complemented k-mers
+  -t, --n-threads <N_THREADS>          Number of parallel threads [default: 4]
+  -h, --help                           Print help
 
-Input:
-      --feature-file-list <FEATURE_FILE_LIST>      A file with one fasta/fastq filename per line, one per feature
-      --feature-per-seq-file <FEATURE_PER_SEQ_FILE> Give input as a single FASTA file, one sequence per feature
-  -u, --unitigs <UNITIGS>                          Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
-      --feature-names <FEATURE_NAMES>              Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name "none" is reserved and cannot be used.
-      --feature-hierarchy <FEATURE_HIERARCHY>      Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named "root").
+Features:
+      --feature-file-list <LABEL_BY_FILE>
+          A file with one fasta/fastq filename per line, one per feature
+      --feature-per-seq-file <LABEL_BY_SEQ>
+          Give input as a single FASTA file, one sequence per feature
+      --feature-names <NAMES>
+          Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name "none" is reserved and cannot be used.
+      --feature-hierarchy <HIERARCHY>
+          Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named "root").
+      --feature-priorities <NODE_PRIORITIES>
+          Optional: a file assigning an integer priority to every node in the feature hierarchy (one "<name> <priority>" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of features in the hierarchy.
+      --feature-set-name <LABELING_NAME>
+          Name for the feature set [default: unnamed]
 
 Advanced use:
+  -u, --unitigs <UNITIGS>
+          Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
       --load-sbwt <SBWT_PATH>
           Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
       --load-lcs <LCS_PATH>
