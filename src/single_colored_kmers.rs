@@ -349,7 +349,7 @@ impl ColorHierarchy {
     }
 }
 
-const LABELING_FILE_MAGIC: [u8; 8] = *b"hksls0.1";
+const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
 const LABELING_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
