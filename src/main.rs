@@ -32,134 +32,6 @@ type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
-
-// It's allowed for there to be names in the hierarchy that are not in the provided names.
-// But every provided name must be in the hierarchy.
-// Returns the tree and the names in id order.
-fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
-
-    for name in provided_names.iter() {
-        if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
-            panic!("Error: can not use \"{}\" as a label name because it is a reserved name", name);
-        }
-    }
-
-    // Build map: label -> id
-    let mut name_to_id = HashMap::<&str, usize>::new();
-    for name in provided_names.iter() {
-        name_to_id.insert(name, name_to_id.len());
-    }
-
-    let lines = read_all_lines(path);
-
-    // Read edges as (child, parent) name pairs; one edge per line
-    let mut edges = Vec::<(usize, usize)>::new();
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim().is_empty() { continue; }
-        let mut parts = line.split_whitespace();
-        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name on line {i}"));
-        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name on line {i}"));
-        let child_id = name_to_id.get(child_name).copied().unwrap_or_else(|| {
-            let new_id = name_to_id.len();
-            name_to_id.insert(child_name, new_id);
-            new_id
-        });
-        let parent_id = name_to_id.get(parent_name).copied().unwrap_or_else(|| {
-            let new_id = name_to_id.len();
-            name_to_id.insert(parent_name, new_id);
-            new_id
-        });
-        edges.push((child_id, parent_id));
-    }
-
-    for name in provided_names {
-        assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
-    }
-
-    let n_nodes = name_to_id.len();
-    // Collect all names, including the new ones we might have found during parsing the tree.
-    let mut all_names: Vec<String> = vec![String::new(); n_nodes];
-    name_to_id.iter().for_each(|(name, id)| all_names[*id] = name.to_string());
-
-    let tree = crate::lca_tree::LcaTree::new(n_nodes, edges)
-        .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()));
-
-    (tree, all_names)
-}
-
-/// Parse a node-priority file of the form
-///
-/// ```text
-/// node_name  priority
-/// ```
-///
-/// one entry per line, tokens separated by whitespace. Returns a vector of
-/// priorities indexed by node id (same ordering as `node_names`). Nodes that
-/// do not appear in the file default to priority 0 (an INFO line is logged for
-/// each such node). Unknown names and duplicate entries are errors.
-fn parse_node_priorities(path: &Path, node_names: &[String]) -> Result<Vec<usize>, String> {
-    let file = File::open(path).map_err(|e| format!("Could not open priorities file {}: {e}", path.display()))?;
-    let name_to_id: HashMap<&str, usize> = node_names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
-
-    let mut priorities: Vec<Option<usize>> = vec![None; node_names.len()];
-    for (lineno, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.map_err(|e| format!("Error reading {}:{}: {e}", path.display(), lineno + 1))?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let mut toks = trimmed.split_whitespace();
-        let name = toks.next().ok_or_else(|| format!("{}:{}: missing node name", path.display(), lineno + 1))?;
-        let pri_tok = toks.next().ok_or_else(|| format!("{}:{}: missing priority for node {name}", path.display(), lineno + 1))?;
-        if toks.next().is_some() {
-            return Err(format!("{}:{}: expected exactly two tokens", path.display(), lineno + 1));
-        }
-        let pri: usize = pri_tok.parse().map_err(|e| format!("{}:{}: invalid priority {pri_tok:?}: {e}", path.display(), lineno + 1))?;
-        let id = *name_to_id.get(name).ok_or_else(|| format!("{}:{}: unknown node name {name:?}", path.display(), lineno + 1))?;
-        if priorities[id].is_some() {
-            return Err(format!("{}:{}: duplicate priority for node {name:?}", path.display(), lineno + 1));
-        }
-        priorities[id] = Some(pri);
-    }
-
-    for (i, p) in priorities.iter_mut().enumerate() {
-        if p.is_none() {
-            log::info!("Node {:?} not found in priority file {}; defaulting to priority 0", node_names[i], path.display());
-            *p = Some(0);
-        }
-    }
-
-    Ok(priorities.into_iter().map(|p| p.unwrap()).collect())
-}
-
-fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>) -> ColorHierarchy {
-    if let Some(path) = hierarchy_path {
-        let (tree, all_names) = read_hierarchy_file(path, &provided_names);
-        ColorHierarchy::with_tree(tree, all_names)
-    } else {
-        // This will check that "root" is not used as a label
-        ColorHierarchy::new_star(provided_names)
-    }
-}
-
-fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> PathBuf {
-    labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
-}
-
-fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKColorIndex {
-    let labeling_path = resolve_labeling_file(index_path, labeling_file);
-    let mut base_input = BufReader::new(File::open(index_path)
-        .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-    let mut fs_input = BufReader::new(File::open(&labeling_path)
-        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
-
-    let base = HksBase::<LcsWrapper>::load(&mut base_input);
-    let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
-    let index = FixedKColorIndex::from_parts(base, labeling);
-    log::info!("Loaded index with s = {}", index.k());
-    index
-}
-
 #[derive(Parser)]
 #[command(arg_required_else_help = true)]
 pub struct Cli {
@@ -339,6 +211,135 @@ pub struct LookupQueryArgs {
 
     #[arg(help = "Output file. Defaults to stdout.", short, long)]
     output: Option<PathBuf>,
+}
+
+
+
+// It's allowed for there to be names in the hierarchy that are not in the provided names.
+// But every provided name must be in the hierarchy.
+// Returns the tree and the names in id order.
+fn read_hierarchy_file(path: &PathBuf, provided_names: &[String]) -> (crate::lca_tree::LcaTree, Vec<String>) {
+
+    for name in provided_names.iter() {
+        if RESERVED_COLOR_NAMES.contains(&name.as_str()) {
+            panic!("Error: can not use \"{}\" as a label name because it is a reserved name", name);
+        }
+    }
+
+    // Build map: label -> id
+    let mut name_to_id = HashMap::<&str, usize>::new();
+    for name in provided_names.iter() {
+        name_to_id.insert(name, name_to_id.len());
+    }
+
+    let lines = read_all_lines(path);
+
+    // Read edges as (child, parent) name pairs; one edge per line
+    let mut edges = Vec::<(usize, usize)>::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim().is_empty() { continue; }
+        let mut parts = line.split_whitespace();
+        let child_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing child name on line {i}"));
+        let parent_name = parts.next().unwrap_or_else(|| panic!("Hierarchy file: missing parent name on line {i}"));
+        let child_id = name_to_id.get(child_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(child_name, new_id);
+            new_id
+        });
+        let parent_id = name_to_id.get(parent_name).copied().unwrap_or_else(|| {
+            let new_id = name_to_id.len();
+            name_to_id.insert(parent_name, new_id);
+            new_id
+        });
+        edges.push((child_id, parent_id));
+    }
+
+    for name in provided_names {
+        assert!(name_to_id.contains_key(name.as_str()), "Provided label {} not found in hierarchy", name);
+    }
+
+    let n_nodes = name_to_id.len();
+    // Collect all names, including the new ones we might have found during parsing the tree.
+    let mut all_names: Vec<String> = vec![String::new(); n_nodes];
+    name_to_id.iter().for_each(|(name, id)| all_names[*id] = name.to_string());
+
+    let tree = crate::lca_tree::LcaTree::new(n_nodes, edges)
+        .unwrap_or_else(|e| panic!("Invalid hierarchy file {}: {e}", path.display()));
+
+    (tree, all_names)
+}
+
+/// Parse a node-priority file of the form
+///
+/// ```text
+/// node_name  priority
+/// ```
+///
+/// one entry per line, tokens separated by whitespace. Returns a vector of
+/// priorities indexed by node id (same ordering as `node_names`). Nodes that
+/// do not appear in the file default to priority 0 (an INFO line is logged for
+/// each such node). Unknown names and duplicate entries are errors.
+fn parse_node_priorities(path: &Path, node_names: &[String]) -> Result<Vec<usize>, String> {
+    let file = File::open(path).map_err(|e| format!("Could not open priorities file {}: {e}", path.display()))?;
+    let name_to_id: HashMap<&str, usize> = node_names.iter().enumerate().map(|(i, n)| (n.as_str(), i)).collect();
+
+    let mut priorities: Vec<Option<usize>> = vec![None; node_names.len()];
+    for (lineno, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|e| format!("Error reading {}:{}: {e}", path.display(), lineno + 1))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut toks = trimmed.split_whitespace();
+        let name = toks.next().ok_or_else(|| format!("{}:{}: missing node name", path.display(), lineno + 1))?;
+        let pri_tok = toks.next().ok_or_else(|| format!("{}:{}: missing priority for node {name}", path.display(), lineno + 1))?;
+        if toks.next().is_some() {
+            return Err(format!("{}:{}: expected exactly two tokens", path.display(), lineno + 1));
+        }
+        let pri: usize = pri_tok.parse().map_err(|e| format!("{}:{}: invalid priority {pri_tok:?}: {e}", path.display(), lineno + 1))?;
+        let id = *name_to_id.get(name).ok_or_else(|| format!("{}:{}: unknown node name {name:?}", path.display(), lineno + 1))?;
+        if priorities[id].is_some() {
+            return Err(format!("{}:{}: duplicate priority for node {name:?}", path.display(), lineno + 1));
+        }
+        priorities[id] = Some(pri);
+    }
+
+    for (i, p) in priorities.iter_mut().enumerate() {
+        if p.is_none() {
+            log::info!("Node {:?} not found in priority file {}; defaulting to priority 0", node_names[i], path.display());
+            *p = Some(0);
+        }
+    }
+
+    Ok(priorities.into_iter().map(|p| p.unwrap()).collect())
+}
+
+fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>) -> ColorHierarchy {
+    if let Some(path) = hierarchy_path {
+        let (tree, all_names) = read_hierarchy_file(path, &provided_names);
+        ColorHierarchy::with_tree(tree, all_names)
+    } else {
+        // This will check that "root" is not used as a label
+        ColorHierarchy::new_star(provided_names)
+    }
+}
+
+fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> PathBuf {
+    labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
+}
+
+fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKColorIndex {
+    let labeling_path = resolve_labeling_file(index_path, labeling_file);
+    let mut base_input = BufReader::new(File::open(index_path)
+        .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+    let mut fs_input = BufReader::new(File::open(&labeling_path)
+        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
+
+    let base = HksBase::<LcsWrapper>::load(&mut base_input);
+    let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
+    let index = FixedKColorIndex::from_parts(base, labeling);
+    log::info!("Loaded index with s = {}", index.k());
+    index
 }
 
 struct DynamicFastXReaderWrapper {
