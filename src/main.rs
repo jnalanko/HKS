@@ -255,7 +255,7 @@ pub enum Subcommands {
         #[arg(help = "Input fasta/fastq file. For multiple input files, see --input-file-list.", long, help_heading = "Input", conflicts_with = "input_file_list")]
         input: Option<PathBuf>,
 
-        #[arg(help = "A file with one input fasta/fastq filename per line.", long, help_heading = "Advanced", conflicts_with = "input")]
+        #[arg(help = "A file with one input fasta/fastq filename per line.", long, help_heading = "Input", conflicts_with = "input")]
         input_file_list: Option<PathBuf>,
 
         #[arg(help = "Output filename. Recommended file extension: .hksb", short = 'o', long = "output", required = true)]
@@ -276,6 +276,39 @@ pub enum Subcommands {
         #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", long = "load-lcs", help_heading = "Advanced use")]
         lcs_path: Option<PathBuf>,
     },
+
+    AddFeatureSet {
+        #[arg(help = "Path to the existing base index file", short, long, required = true)]
+        index: PathBuf,
+
+        #[arg(help = "Output filename for the new labeling file", short, long, required = true)]
+        output: PathBuf,
+
+        #[arg(help = "A file with one fasta/fastq filename per line, one per feature. All k-mers in these files must already be present in the index.", long = "feature-file-list", help_heading = "Features", conflicts_with = "label_by_seq")]
+        label_by_file: Option<PathBuf>,
+
+        #[arg(help = "Give input as a single FASTA file, one sequence per feature. All k-mers in this file must already be present in the index.", long = "feature-per-seq-file", help_heading = "Features", conflicts_with = "label_by_file")]
+        label_by_seq: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as features. The feature name \"none\" is reserved.", long = "feature-names", help_heading = "Features")]
+        labels: Option<PathBuf>,
+
+        #[arg(help = "Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named \"root\").", long = "feature-hierarchy", help_heading = "Features")]
+        hierarchy: Option<PathBuf>,
+
+        #[arg(help = "Name for the new feature set.", long = "feature-set-name", required = true, help_heading = "Features")]
+        labeling_name: String,
+
+        #[arg(help = "Optional: a file assigning an integer priority to every node in the feature hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.", long = "feature-priorities", help_heading = "Features")]
+        node_priorities: Option<PathBuf>,
+
+        #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
+        forward_only: bool,
+
+        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
+        n_threads: u64,
+    },
+
 
     #[command(arg_required_else_help = true)]
     Lookup {
@@ -342,38 +375,6 @@ pub enum Subcommands {
 
         #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
         labeling_file: Option<PathBuf>,
-    },
-
-    AddFeatureSet {
-        #[arg(help = "Path to the existing base index file", short, long, required = true)]
-        index: PathBuf,
-
-        #[arg(help = "Output filename for the new labeling file", short, long, required = true)]
-        output: PathBuf,
-
-        #[arg(help = "A file with one fasta/fastq filename per line, one per feature. All k-mers in these files must already be present in the index.", long = "feature-file-list", help_heading = "Features", conflicts_with = "label_by_seq")]
-        label_by_file: Option<PathBuf>,
-
-        #[arg(help = "Give input as a single FASTA file, one sequence per feature. All k-mers in this file must already be present in the index.", long = "feature-per-seq-file", help_heading = "Features", conflicts_with = "label_by_file")]
-        label_by_seq: Option<PathBuf>,
-
-        #[arg(help = "Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as features. The feature name \"none\" is reserved.", long = "feature-names", help_heading = "Features")]
-        labels: Option<PathBuf>,
-
-        #[arg(help = "Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named \"root\").", long = "feature-hierarchy", help_heading = "Features")]
-        hierarchy: Option<PathBuf>,
-
-        #[arg(help = "Name for the new feature set.", long = "feature-set-name", required = true, help_heading = "Features")]
-        labeling_name: String,
-
-        #[arg(help = "Optional: a file assigning an integer priority to every node in the feature hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.", long = "feature-priorities", help_heading = "Features")]
-        node_priorities: Option<PathBuf>,
-
-        #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
-        forward_only: bool,
-
-        #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
-        n_threads: u64,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
