@@ -343,7 +343,7 @@ mod tests {
     use rand_chacha::rand_core::{RngCore, SeedableRng};
     use sbwt::{BitPackedKmerSortingMem, SeqStream};
 
-    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, Labeling, LcsWrapper, HksIndex}, traits::ColoredKmerLookupAlgorithm};
+    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling, LcsWrapper}, traits::ColoredKmerLookupAlgorithm};
 
     struct HksIndexLookup<'a> {
         index: &'a HksIndex<LcsWrapper, SimpleColorStorage>,
@@ -463,8 +463,10 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
-        eprintln!("SingleColoredKmers built");
+        let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
+        let sck = HksIndex::from_parts(base, labeling);
+        eprintln!("HksIndex built");
 
         // Generate 1000 random queries of lengths between 1 and 100
         let mut queries: Vec<Vec<u8>> = Vec::new();
@@ -588,8 +590,10 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
-        eprintln!("SingleColoredKmers built");
+        let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
+        let sck = HksIndex::from_parts(base, labeling);
+        eprintln!("HksIndex built");
 
         // Generate random queries of lengths between 1 and 50
         let n_queries = 1000;
@@ -670,20 +674,21 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter()
             .map(|s| SingleSeqStream::new(s.clone()))
             .collect();
-        let original: HksIndex<LcsWrapper, SimpleColorStorage> = crate::build::build(
-            sbwt, lcs, seqstreams, 1, ColorHierarchy::new_star(color_names), "unnamed", None
-        );
+
+        let original_base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let original_labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&original_base, seqstreams, 3,  ColorHierarchy::new_star(color_names), "unnamed", None);
+        let original = HksIndex::from_parts(original_base.clone(), original_labeling.clone());
 
         // Serialize base index and feature set to separate buffers
         let mut base_buf = Vec::<u8>::new();
-        original.serialize_base(&mut base_buf);
+        original_base.serialize(&mut base_buf);
         let mut fs_buf = Vec::<u8>::new();
-        original.labeling().serialize_to_file(&mut fs_buf);
+        original_labeling.serialize_to_file(&mut fs_buf);
 
         // Deserialize
-        let (sbwt, lcs) = HksIndex::<LcsWrapper, SimpleColorStorage>::load_base(&mut base_buf.as_slice());
+        let base = HksBase::load(&mut base_buf.as_slice());
         let feature_set = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_buf.as_slice());
-        let loaded = HksIndex::<LcsWrapper, SimpleColorStorage>::from_parts(sbwt, lcs, feature_set);
+        let loaded = HksIndex::<LcsWrapper, SimpleColorStorage>::from_parts(base, feature_set);
 
         // Check structural equality
         assert_eq!(original.k(), loaded.k());

@@ -18,34 +18,6 @@ use crate::priority_lca::PriorityLca;
 use crate::single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling};
 use crate::traits::*;
 
-/// Build a new index from input sequences. If `priorities` is `Some`, uses
-/// priority-aware LCA during the color-merge fold (see [`PriorityLca`]);
-/// otherwise uses standard LCA. Priorities are dropped once construction
-/// finishes — they are not stored in the returned index.
-pub fn build<L, C, T>(
-    sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
-    lcs: sbwt::LcsArray,
-    input_streams: Vec<T>,
-    n_threads: usize,
-    hierarchy: ColorHierarchy,
-    labeling_name: &str,
-    priorities: Option<Vec<usize>>,
-) -> HksIndex<L, C>
-where
-    L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess,
-    C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>,
-    T: SeqStream + Send,
-{
-    let color_storage = mark_colors_with_priorities::<T, LcsArray>(
-        &sbwt, &lcs, input_streams, n_threads, &hierarchy, priorities,
-    );
-
-    log::info!("Indexing color id array");
-    let color_assignments = C::from(color_storage);
-    let fs = Labeling { color_assignments, hierarchy, name: labeling_name.to_owned() };
-    HksIndex::<L, C>::new_with_labeling(sbwt, lcs, fs)
-}
-
 /// Build a new labeling from an existing index (sbwt + lcs) and input streams.
 /// The result can be serialized to a standalone labeling file.
 pub fn build_labeling<L, C, T>(
@@ -61,7 +33,7 @@ where
     C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>,
     T: SeqStream + Send,
 {
-    let color_storage = mark_colors_with_priorities::<T, L>(
+    let color_storage = mark_colors_with_priorities::<T, C, L>(
         base, input_streams, n_threads, &hierarchy, priorities,
     );
 
@@ -109,7 +81,7 @@ where
 /// of nodes and returns Some(node) if we want to override the LCA with that
 /// node instead, otherwise None.
 fn mark_colors_dispatch<T, L, F>(
-    base: HksBase<L>,
+    base: &HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     required_bit_width: usize,
@@ -133,7 +105,7 @@ where
 }
 
 fn mark_colors<T, A, L, F>(
-    base: HksBase<L>,
+    base: &HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     color_hierarchy: &LcaTree,

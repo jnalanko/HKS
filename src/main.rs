@@ -224,49 +224,6 @@ fn build_hierarchy(hierarchy_path: &Option<PathBuf>, provided_names: Vec<String>
     }
 }
 
-fn add_colors<T: sbwt::SeqStream + Send>(
-    sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
-    lcs: LcsArray,
-    individual_streams: Vec<T>,
-    n_threads: usize,
-    index_out_path: PathBuf,
-    labeling_out_path: PathBuf,
-    hierarchy: ColorHierarchy,
-    labeling_name: &str,
-    priorities: Option<Vec<usize>>,
-) {
-    let index: FixedKColorIndex = build::build(sbwt, lcs, individual_streams, n_threads, hierarchy, labeling_name, priorities);
-    let color_index = ColorIndex::FixedK(index);
-
-    if let Some(parent) = index_out_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-    }
-    log::info!("Writing base index to {}", index_out_path.display());
-    let mut out = BufWriter::new(File::create(&index_out_path)
-        .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", index_out_path.display())));
-    color_index.serialize_base(&mut out);
-    drop(out);
-
-    if let Some(parent) = labeling_out_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-    }
-    log::info!("Writing labeling to {}", labeling_out_path.display());
-    let mut labeling_out = BufWriter::new(File::create(&labeling_out_path)
-        .unwrap_or_else(|e| panic!("Could not create labeling file {}: {e}", labeling_out_path.display())));
-    match &color_index {
-        ColorIndex::FixedK(index) => index.labeling().serialize_to_file(&mut labeling_out),
-    }
-
-    let index_size = std::fs::metadata(&index_out_path).unwrap().len() as f64;
-    let labeling_size = std::fs::metadata(&labeling_out_path).unwrap().len() as f64;
-    log::info!("Base index size on disk: {}", human_bytes::human_bytes(index_size));
-    log::info!("Labeling size on disk: {}", human_bytes::human_bytes(labeling_size));
-}
-
 fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> PathBuf {
     labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
 }
