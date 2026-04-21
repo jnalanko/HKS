@@ -270,6 +270,9 @@ pub enum Subcommands {
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
         n_threads: u64,
 
+        #[arg(help = "RAM budget for SBWT construction in gigabytes.", long = "mem-gigas", default_value = "8", value_parser = clap::value_parser!(u64).range(1..))]
+        mem_gigas: u64,
+
         #[arg(help = "Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths", long = "load-sbwt", help_heading = "Advanced use")]
         sbwt_path: Option<PathBuf>,
 
@@ -568,6 +571,7 @@ struct SbwtBuildOptions {
     s: usize,
     add_rev_comps: bool,
     temp_dir: Option<PathBuf>,
+    mem_gigas: usize,
 }
 
 enum SbwtSource {
@@ -588,7 +592,7 @@ fn get_sbwt_and_lcs(sbwt_source: SbwtSource, lcs_path: Option<PathBuf>, n_thread
                     .n_threads(n_threads)
                     .precalc_length(8)
                     .add_all_dummy_paths(true) // This is required for multi-k support
-                    .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
+                    .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td).mem_gb(opts.mem_gigas))
                 .run(opts.seqs)
             } else {
                 // Use in-memory construction
@@ -599,7 +603,7 @@ fn get_sbwt_and_lcs(sbwt_source: SbwtSource, lcs_path: Option<PathBuf>, n_thread
                     .n_threads(n_threads)
                     .precalc_length(8)
                     .add_all_dummy_paths(true) // This is required for multi-k support
-                    .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
+                    .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false).mem_gb(opts.mem_gigas))
                 .run(opts.seqs)
             };
             let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
@@ -701,9 +705,9 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::BuildBase { s, input, input_file_list, output: out_path, temp_dir, forward_only, n_threads, sbwt_path, lcs_path  } => {
+        Subcommands::BuildBase { s, input, input_file_list, output: out_path, temp_dir, forward_only, n_threads, mem_gigas, sbwt_path, lcs_path  } => {
 
-            let (s, n_threads) = (s as usize, n_threads as usize);
+            let (s, n_threads, mem_gigas) = (s as usize, n_threads as usize, mem_gigas as usize);
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {
@@ -734,6 +738,7 @@ fn main() {
                         s,
                         add_rev_comps,
                         temp_dir,
+                        mem_gigas,
                     };
 
                     get_sbwt_and_lcs(SbwtSource::ComputeFromSeqs(sbwt_build_opts), lcs_path, n_threads)
