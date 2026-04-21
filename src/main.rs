@@ -1,6 +1,6 @@
 #![allow(non_snake_case, clippy::needless_range_loop, clippy::len_zero)] // Using upper-case variable names from the source material
 
-use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Read, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
+use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
 use jseqio::{reader::DynamicFastXReader, record::Record};
@@ -32,8 +32,6 @@ type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
 // we cannot build a compile-time string from this slice.
 static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
-const HKS_FILE_ID: [u8; 8] = *b"hks0.1.5";
-const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
 
 // It's allowed for there to be names in the hierarchy that are not in the provided names.
 // But every provided name must be in the hierarchy.
@@ -154,16 +152,6 @@ fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKCol
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
     let mut fs_input = BufReader::new(File::open(&labeling_path)
         .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
-
-    let mut file_id = [0_u8; 8];
-    base_input.read_exact(&mut file_id).unwrap();
-    assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
-
-    let mut type_id = [0_u8; 4];
-    base_input.read_exact(&mut type_id).unwrap();
-    if type_id != FIXED_INDEX_TYPE_ID {
-        panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
-    }
 
     let base = HksBase::<LcsWrapper>::load(&mut base_input);
     let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
@@ -698,14 +686,6 @@ fn main() {
             log::info!("Loading the base index ...");
             let mut base_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            let mut file_id = [0_u8; 8];
-            base_input.read_exact(&mut file_id).unwrap();
-            assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
-            let mut type_id = [0_u8; 4];
-            base_input.read_exact(&mut type_id).unwrap();
-            if type_id != FIXED_INDEX_TYPE_ID {
-                panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
-            }
             let base = HksBase::<LcsWrapper>::load(&mut base_input);
 
             let labeling: Labeling<SimpleColorStorage> = if let Some(fof) = label_by_file {

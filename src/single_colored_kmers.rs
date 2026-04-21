@@ -35,16 +35,9 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
         &self.lcs
     }
 
-    fn base_serialization_version() -> u32 {
-        7_u32
-    }
-    fn base_serialization_magic() -> [u8; 4] {
-        [17, 42, 191, 203]
-    }
-
     pub fn serialize(&self, out: &mut impl Write) {
-        out.write_all(&Self::base_serialization_magic()).unwrap();
-        out.write_all(&Self::base_serialization_version().to_le_bytes()).unwrap();
+        out.write_all(&BASE_FILE_MAGIC).unwrap();
+        out.write_all(&BASE_FILE_VERSION.to_le_bytes()).unwrap();
         self.sbwt.serialize(out).unwrap();
         self.lcs.serialize(out);
     }
@@ -54,15 +47,15 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
     pub fn load(input: &mut impl Read) -> Self {
         let mut magic = [0_u8; 4];
         input.read_exact(&mut magic).unwrap();
-        if magic != Self::base_serialization_magic() {
+        if magic != BASE_FILE_MAGIC {
             panic!("Error loading index: invalid file format (magic constant mismatch)");
         }
 
         let mut version_bytes = [0_u8; 4];
         input.read_exact(&mut version_bytes).unwrap();
         let version = u32::from_le_bytes(version_bytes);
-        if version != Self::base_serialization_version() {
-            panic!("Error loading index: wrong file format version number (found {}, expected {})", version, Self::base_serialization_version());
+        if version != BASE_FILE_VERSION {
+            panic!("Error loading index: wrong file format version number (found {}, expected {})", version, BASE_FILE_VERSION);
         }
 
         let sbwt = SbwtIndex::<sbwt::SubsetMatrix>::load(input).unwrap();
@@ -372,6 +365,9 @@ impl ColorHierarchy {
         Self { tree, names }
     }
 }
+
+const BASE_FILE_MAGIC: [u8; 4] = [17, 42, 191, 203];
+const BASE_FILE_VERSION: u32 = 7;
 
 const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
 const LABELING_FILE_VERSION: u32 = 1;
