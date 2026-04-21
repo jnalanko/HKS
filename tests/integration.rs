@@ -31,29 +31,131 @@ fn hks() -> Command {
 
 // Builds a basic index with prefix <dir>/index, producing index.hksb and index.hksf.
 fn build_basic_index(prefix: &Path) {
+    let hksb = prefix.with_extension("hksb");
+    let hksf = prefix.with_extension("hksf");
+
     let status = hks()
-        .args(["build", "-s", "10", "--feature-file-list", "example/file_of_files.txt", "-o"])
-        .arg(prefix)
+        .args(["build-base", "-s", "10", "--input-file-list", "example/file_of_files.txt", "-o"])
+        .arg(&hksb)
         .status()
         .unwrap();
-    assert!(status.success(), "basic index build failed");
+    assert!(status.success(), "build-base failed");
+
+    let status = hks()
+        .args(["add-feature-set", "-i"])
+        .arg(&hksb)
+        .args(["--feature-file-list", "example/file_of_files.txt", "--feature-set-name", "main", "-o"])
+        .arg(&hksf)
+        .status()
+        .unwrap();
+    assert!(status.success(), "add-feature-set failed");
 }
 
-// --- build ---
+// --- build-base ---
 
 #[test]
-fn build_label_by_file() {
+fn build_base_label_by_file() {
     let dir = tmp_dir();
     let status = hks()
-        .args(["build", "-s", "10", "--feature-file-list", "example/file_of_files.txt", "-o"])
-        .arg(dir.join("index"))
+        .args(["build-base", "-s", "10", "--input-file-list", "example/file_of_files.txt", "-o"])
+        .arg(dir.join("index.hksb"))
         .status()
         .unwrap();
     assert!(status.success());
 }
 
 #[test]
-fn build_label_by_seq() {
+fn build_base_forward_only() {
+    let dir = tmp_dir();
+    let status = hks()
+        .args([
+            "build-base",
+            "-s",
+            "10",
+            "--input-file-list",
+            "example/file_of_files.txt",
+            "--forward-only",
+            "-o",
+        ])
+        .arg(dir.join("index.hksb"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn build_base_n_threads() {
+    let dir = tmp_dir();
+    let status = hks()
+        .args([
+            "build-base",
+            "-s",
+            "10",
+            "--input-file-list",
+            "example/file_of_files.txt",
+            "-t",
+            "2",
+            "-o",
+        ])
+        .arg(dir.join("index.hksb"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn build_base_external_memory() {
+    let dir = tmp_dir();
+    let tmp_work = dir.join("tmp");
+    std::fs::create_dir_all(&tmp_work).unwrap();
+    let status = hks()
+        .args([
+            "build-base",
+            "-s",
+            "10",
+            "--input-file-list",
+            "example/file_of_files.txt",
+            "--external-memory",
+        ])
+        .arg(&tmp_work)
+        .args(["-o"])
+        .arg(dir.join("index.hksb"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+// --- add-feature-set ---
+
+#[test]
+fn add_feature_set_label_by_file() {
+    let dir = tmp_dir();
+    let hksb = dir.join("index.hksb");
+    let status = hks()
+        .args(["build-base", "-s", "10", "--input-file-list", "example/file_of_files.txt", "-o"])
+        .arg(&hksb)
+        .status()
+        .unwrap();
+    assert!(status.success(), "build-base failed");
+
+    let status = hks()
+        .args(["add-feature-set", "-i"])
+        .arg(&hksb)
+        .args([
+            "--feature-file-list",
+            "example/file_of_files.txt",
+            "--feature-set-name",
+            "main",
+            "-o",
+        ])
+        .arg(dir.join("index.hksf"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn add_feature_set_label_by_seq() {
     let dir = tmp_dir();
     let combined = dir.join("combined.fna");
     std::fs::write(
@@ -61,143 +163,78 @@ fn build_label_by_seq() {
         ">seqA\nACGTACGTGTCGTA\n>seqB\nACGTGCTGAGCA\n",
     )
     .unwrap();
+    let hksb = dir.join("index.hksb");
     let status = hks()
-        .args(["build", "-s", "10", "--feature-per-seq-file"])
+        .args(["build-base", "-s", "10", "--input"])
         .arg(&combined)
         .args(["-o"])
-        .arg(dir.join("index"))
+        .arg(&hksb)
+        .status()
+        .unwrap();
+    assert!(status.success(), "build-base failed");
+
+    let status = hks()
+        .args(["add-feature-set", "-i"])
+        .arg(&hksb)
+        .args(["--feature-per-seq-file"])
+        .arg(&combined)
+        .args(["--feature-set-name", "main", "-o"])
+        .arg(dir.join("index.hksf"))
         .status()
         .unwrap();
     assert!(status.success());
 }
 
 #[test]
-fn build_with_hierarchy() {
+fn add_feature_set_with_hierarchy() {
     let dir = tmp_dir();
+    let hksb = dir.join("index.hksb");
     let status = hks()
+        .args(["build-base", "-s", "10", "--input-file-list", "example/file_of_files.txt", "-o"])
+        .arg(&hksb)
+        .status()
+        .unwrap();
+    assert!(status.success(), "build-base failed");
+
+    let status = hks()
+        .args(["add-feature-set", "-i"])
+        .arg(&hksb)
         .args([
-            "build",
-            "-s",
-            "10",
             "--feature-file-list",
             "example/file_of_files.txt",
             "--feature-hierarchy",
             "example/hierarchy.txt",
+            "--feature-set-name",
+            "main",
             "-o",
         ])
-        .arg(dir.join("index"))
+        .arg(dir.join("index.hksf"))
         .status()
         .unwrap();
     assert!(status.success());
 }
 
 #[test]
-fn build_with_custom_labels() {
+fn add_feature_set_with_custom_labels() {
     let dir = tmp_dir();
     let labels_file = dir.join("labels.txt");
     std::fs::write(&labels_file, "labelA\nlabelB\nlabelC\nlabelD\n").unwrap();
+
+    let hksb = dir.join("index.hksb");
     let status = hks()
-        .args([
-            "build",
-            "-s",
-            "10",
-            "--feature-file-list",
-            "example/file_of_files.txt",
-            "--feature-names",
-        ])
+        .args(["build-base", "-s", "10", "--input-file-list", "example/file_of_files.txt", "-o"])
+        .arg(&hksb)
+        .status()
+        .unwrap();
+    assert!(status.success(), "build-base failed");
+
+    let status = hks()
+        .args(["add-feature-set", "-i"])
+        .arg(&hksb)
+        .args(["--feature-file-list", "example/file_of_files.txt", "--feature-names"])
         .arg(&labels_file)
-        .args(["-o"])
-        .arg(dir.join("index"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
-#[test]
-fn build_with_unitigs() {
-    let dir = tmp_dir();
-    let unitigs = dir.join("unitigs.fna");
-    let content = std::fs::read_to_string(
-        PathBuf::from(PROJECT_DIR).join("example/A.fna"),
-    )
-    .unwrap()
-        + &std::fs::read_to_string(PathBuf::from(PROJECT_DIR).join("example/B.fna")).unwrap()
-        + &std::fs::read_to_string(PathBuf::from(PROJECT_DIR).join("example/C.fna")).unwrap()
-        + &std::fs::read_to_string(PathBuf::from(PROJECT_DIR).join("example/D.fna")).unwrap();
-    std::fs::write(&unitigs, content).unwrap();
-    let status = hks()
-        .args([
-            "build",
-            "-s",
-            "10",
-            "--feature-file-list",
-            "example/file_of_files.txt",
-            "--unitigs",
-        ])
-        .arg(&unitigs)
-        .args(["-o"])
-        .arg(dir.join("index"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
-#[test]
-fn build_forward_only() {
-    let dir = tmp_dir();
-    let status = hks()
-        .args([
-            "build",
-            "-s",
-            "10",
-            "--feature-file-list",
-            "example/file_of_files.txt",
-            "--forward-only",
-            "-o",
-        ])
-        .arg(dir.join("index"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
-#[test]
-fn build_n_threads() {
-    let dir = tmp_dir();
-    let status = hks()
-        .args([
-            "build",
-            "-s",
-            "10",
-            "--feature-file-list",
-            "example/file_of_files.txt",
-            "-t",
-            "2",
-            "-o",
-        ])
-        .arg(dir.join("index"))
-        .status()
-        .unwrap();
-    assert!(status.success());
-}
-
-#[test]
-fn build_external_memory() {
-    let dir = tmp_dir();
-    let tmp_work = dir.join("tmp");
-    std::fs::create_dir_all(&tmp_work).unwrap();
-    let status = hks()
-        .args([
-            "build",
-            "-s",
-            "10",
-            "--feature-file-list",
-            "example/file_of_files.txt",
-            "--external-memory",
-        ])
-        .arg(&tmp_work)
-        .args(["-o"])
-        .arg(dir.join("index"))
+        .args(["--feature-set-name", "main", "-o"])
+        .arg(dir.join("index.hksf"))
         .status()
         .unwrap();
     assert!(status.success());
@@ -213,7 +250,7 @@ fn lookup_basic() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
@@ -228,7 +265,7 @@ fn lookup_with_k() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["-k", "5"])
         .status()
@@ -244,7 +281,7 @@ fn lookup_report_label_ids() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--report-label-ids"])
         .status()
@@ -260,7 +297,7 @@ fn lookup_report_query_names() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--report-query-names"])
         .status()
@@ -276,7 +313,7 @@ fn lookup_report_misses() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--report-misses"])
         .status()
@@ -292,7 +329,7 @@ fn lookup_no_header() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--no-header"])
         .status()
@@ -308,7 +345,7 @@ fn lookup_n_threads() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["-t", "2"])
         .status()
@@ -324,7 +361,7 @@ fn lookup_batch_size() {
     let status = hks()
         .args(["lookup", "-q", "example/query.fasta", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--batch-size", "100"])
         .status()
@@ -342,7 +379,7 @@ fn stats_basic() {
     let status = hks()
         .args(["stats", "-i"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
@@ -359,7 +396,7 @@ fn node_stats_basic() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .status()
         .unwrap();
@@ -374,7 +411,7 @@ fn node_stats_report_label_names() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["--report-label-ids"])
         .status()
@@ -390,7 +427,7 @@ fn node_stats_n_threads() {
     let status = hks()
         .args(["node-stats", "--index"])
         .arg(prefix.with_extension("hksb"))
-        .arg("--labeling-file")
+        .arg("--feature-set-file")
         .arg(prefix.with_extension("hksf"))
         .args(["-t", "2"])
         .status()
