@@ -8,7 +8,7 @@ use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtInde
 use single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
 use parallel_queries::OutputWriter;
 
-use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, HksBase, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
+use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{HksBase, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
 
 mod single_colored_kmers;
 mod build;
@@ -26,10 +26,6 @@ mod color_storage;
 type FixedKColorIndex = HksIndex<LcsWrapper, SimpleColorStorage>;
 type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
 
-enum ColorIndex { // For now just one variant, might add more later
-    FixedK(FixedKColorIndex),
-}
-
 // If these names change, remember to also update the hardcoded mention in the
 // help text of the --names argument in the Build subcommand below.
 // The duplication exists because Rust's concat!() only accepts literals, so
@@ -38,82 +34,6 @@ static RESERVED_COLOR_NAMES: &[&str] = &["none"];
 
 const HKS_FILE_ID: [u8; 8] = *b"hks0.1.5";
 const FIXED_INDEX_TYPE_ID: [u8; 4] = *b"fixd";
-//const FLEXIBLE_INDEX_TYPE_ID: [u8; 4] = *b"flex";
-
-impl ColorIndex {
-    fn serialize_base(&self, out: &mut impl Write) {
-        match self {
-            ColorIndex::FixedK(index) => {
-                out.write_all(&HKS_FILE_ID).unwrap();
-                out.write_all(&FIXED_INDEX_TYPE_ID).unwrap();
-                index.base().serialize(out);
-            },
-        }
-    }
-
-    fn load(base_input: &mut impl Read, fs_input: &mut impl Read) -> Self {
-        let mut file_id = [0_u8; 8];
-        base_input.read_exact(&mut file_id).unwrap();
-        assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
-
-        let mut type_id = [0_u8; 4];
-        base_input.read_exact(&mut type_id).unwrap();
-        match type_id {
-            FIXED_INDEX_TYPE_ID => {
-                let base = HksBase::<LcsWrapper>::load(base_input);
-                let labeling = Labeling::<SimpleColorStorage>::load_from_file(fs_input);
-                let index = FixedKColorIndex::from_parts(base, labeling);
-                log::info!("Loaded index with s = {}", index.k());
-                ColorIndex::FixedK(index)
-            },
-            _ => {
-                panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
-            }
-        }
-    }
-
-    fn k(&self) -> usize {
-        match self {
-            ColorIndex::FixedK(index) => index.k(),
-        }
-    }
-
-    fn is_flexible(&self) -> bool {
-        match self {
-            ColorIndex::FixedK(_) => false,
-        }
-    }
-
-    fn n_kmers(&self) -> usize {
-        match self {
-            ColorIndex::FixedK(index) => index.n_kmers(),
-        }
-    }
-
-    fn color_stats(&self) -> ColorStats {
-        match self {
-            ColorIndex::FixedK(index) => index.color_stats(),
-        }
-    }
-
-    fn color_names(&self) -> &[String] {
-        match self {
-            ColorIndex::FixedK(index) => index.labeling().hierarchy.names(),
-        }
-    }
-
-    fn color_hierarchy(&self) -> &LcaTree {
-        match self {
-            ColorIndex::FixedK(index) => index.labeling().hierarchy.tree(),
-        }
-    }
-
-    fn n_colors_in_hierarchy(&self) -> usize {
-        match self {
-            ColorIndex::FixedK(index) => index.labeling().hierarchy.n_nodes(),
-        }
-    }
-}
 
 // It's allowed for there to be names in the hierarchy that are not in the provided names.
 // But every provided name must be in the hierarchy.
@@ -228,13 +148,28 @@ fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -
     labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
 }
 
-fn open_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> ColorIndex {
+fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKColorIndex {
     let labeling_path = resolve_labeling_file(index_path, labeling_file);
     let mut base_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
     let mut fs_input = BufReader::new(File::open(&labeling_path)
         .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
-    ColorIndex::load(&mut base_input, &mut fs_input)
+
+    let mut file_id = [0_u8; 8];
+    base_input.read_exact(&mut file_id).unwrap();
+    assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
+
+    let mut type_id = [0_u8; 4];
+    base_input.read_exact(&mut type_id).unwrap();
+    if type_id != FIXED_INDEX_TYPE_ID {
+        panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
+    }
+
+    let base = HksBase::<LcsWrapper>::load(&mut base_input);
+    let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
+    let index = FixedKColorIndex::from_parts(base, labeling);
+    log::info!("Loaded index with s = {}", index.k());
+    index
 }
 
 #[derive(Parser)]
@@ -509,11 +444,10 @@ fn run_prompt_loop(index: &ShortKColorIndex, n_threads: usize) {
     }
 }
 
-fn compute_node_stats(index: ColorIndex, report_color_names: bool, n_threads: usize) {
+fn compute_node_stats(mut index: FixedKColorIndex, report_color_names: bool, n_threads: usize) {
     use rayon::prelude::*;
 
-    let color_names: Option<Vec<String>> = report_color_names.then(|| index.color_names().to_vec());
-    let ColorIndex::FixedK(mut index) = index;
+    let color_names: Option<Vec<String>> = report_color_names.then(|| index.labeling().hierarchy.names().to_vec());
     let k = index.k();
 
     log::info!("Preprocessing: marking dummy nodes");
@@ -753,83 +687,6 @@ fn main() {
             base.serialize(&mut output_writer);
         },
 
-        Subcommands::Lookup { index: index_path, labeling_file, k, n_threads, query_args } => {
-            log::info!("Loading the index ...");
-            let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, labeling_file);
-            log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
-
-            let ColorIndex::FixedK(index_inner) = index;
-            let k = k.unwrap_or(index_inner.k() as u64) as usize;
-            if k > index_inner.k() {
-                panic!("Error: query k = {} larger than indexing s = {}", k, index_inner.k());
-            }
-
-            let n_threads = n_threads as usize;
-            // Constructor does extra preprocessing if k < index_inner.k()
-            let index = ShortKColorIndex::new(index_inner, k, n_threads);
-            run_lookup_with_args(&index, n_threads, &query_args).unwrap_or_else(|e| panic!("{e}"));
-        },
-
-        Subcommands::Prompt { index: index_path, labeling_file, k, n_threads } => {
-            log::info!("Loading the index ...");
-            let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, labeling_file);
-            log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
-
-            let ColorIndex::FixedK(index_inner) = index;
-            let session_k = k.unwrap_or(index_inner.k() as u64) as usize;
-            if session_k > index_inner.k() {
-                panic!("Error: query k = {} larger than indexing s = {}", session_k, index_inner.k());
-            }
-
-            let n_threads = n_threads as usize;
-            // Constructor does extra preprocessing if session_k < index_inner.k()
-            let index = ShortKColorIndex::new(index_inner, session_k, n_threads);
-            run_prompt_loop(&index, n_threads);
-        },
-
-        Subcommands::Stats { index: index_path, labeling_file } => {
-            let index = open_index(&index_path, labeling_file);
-            let stats = index.color_stats();
-            println!("Index type:            {}", if index.is_flexible() { "flexible-k" } else { "fixed-k" });
-            println!("k:                     {}", index.k());
-            println!("Number of labels in hierarchy:      {}", index.n_colors_in_hierarchy());
-            println!("Number of k-mers:      {}", index.n_kmers());
-            println!("Labeled SBWT positions: {}", stats.colored);
-            println!("Unlabeled SBWT positions:  {}", stats.uncolored);
-            println!("Label run min length:  {}", stats.color_run_min);
-            println!("Label run max length:  {}", stats.color_run_max);
-            println!("Label run mean length: {:.2}", stats.color_run_mean);
-            println!();
-            println!("{:<10}  {}", "Count", "Label name");
-            println!("{:<10}  {}", stats.uncolored, "none");
-            for (id, name) in index.color_names().iter().enumerate() {
-                println!("{:<10}  {}", stats.color_counts[id], name);
-            }
-        },
-
-        Subcommands::NodeStats { index: index_path, labeling_file, report_color_ids, n_threads } => {
-            let index = open_index(&index_path, labeling_file);
-            compute_node_stats(index, !report_color_ids, n_threads);
-        },
-
-        Subcommands::PrintHierarchy { index: index_path, labeling_file } => {
-            let index = open_index(&index_path, labeling_file);
-            let names = index.color_names();
-            let tree = index.color_hierarchy();
-            let n = tree.n_nodes();
-            println!("{}", n);
-            for name in names {
-                println!("{}", name);
-            }
-            for node in 0..n {
-                if node != tree.root() {
-                    println!("{} {}", names[node], names[tree.parent(node)]);
-                }
-            }
-        },
-
         Subcommands::AddFeatureSet { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --feature-file-list or --feature-per-seq-file is required");
@@ -841,6 +698,14 @@ fn main() {
             log::info!("Loading the base index ...");
             let mut base_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
+            let mut file_id = [0_u8; 8];
+            base_input.read_exact(&mut file_id).unwrap();
+            assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID (outdated index file?)");
+            let mut type_id = [0_u8; 4];
+            base_input.read_exact(&mut type_id).unwrap();
+            if type_id != FIXED_INDEX_TYPE_ID {
+                panic!("Unknown index type ID in HKS file: {}", String::from_utf8_lossy(&type_id));
+            }
             let base = HksBase::<LcsWrapper>::load(&mut base_input);
 
             let labeling: Labeling<SimpleColorStorage> = if let Some(fof) = label_by_file {
@@ -864,18 +729,90 @@ fn main() {
             labeling.serialize_to_file(&mut out);
         },
 
+
+        Subcommands::Lookup { index: index_path, labeling_file, k, n_threads, query_args } => {
+            log::info!("Loading the index ...");
+            let index_loading_start = std::time::Instant::now();
+            let index = load_index(&index_path, labeling_file);
+            log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
+
+            let k = k.unwrap_or(index.k() as u64) as usize;
+            if k > index.k() {
+                panic!("Error: query k = {} larger than indexing s = {}", k, index.k());
+            }
+
+            let n_threads = n_threads as usize;
+            // Constructor does extra preprocessing if k < index.k()
+            let index = ShortKColorIndex::new(index, k, n_threads);
+            run_lookup_with_args(&index, n_threads, &query_args).unwrap_or_else(|e| panic!("{e}"));
+        },
+
+        Subcommands::Prompt { index: index_path, labeling_file, k, n_threads } => {
+            log::info!("Loading the index ...");
+            let index_loading_start = std::time::Instant::now();
+            let index = load_index(&index_path, labeling_file);
+            log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
+
+            let session_k = k.unwrap_or(index.k() as u64) as usize;
+            if session_k > index.k() {
+                panic!("Error: query k = {} larger than indexing s = {}", session_k, index.k());
+            }
+
+            let n_threads = n_threads as usize;
+            // Constructor does extra preprocessing if session_k < index.k()
+            let index = ShortKColorIndex::new(index, session_k, n_threads);
+            run_prompt_loop(&index, n_threads);
+        },
+
+        Subcommands::Stats { index: index_path, labeling_file } => {
+            let index = load_index(&index_path, labeling_file);
+            let stats = index.color_stats();
+            println!("Index type:            fixed-k");
+            println!("k:                     {}", index.k());
+            println!("Number of labels in hierarchy:      {}", index.labeling().hierarchy.n_nodes());
+            println!("Number of k-mers:      {}", index.n_kmers());
+            println!("Labeled SBWT positions: {}", stats.colored);
+            println!("Unlabeled SBWT positions:  {}", stats.uncolored);
+            println!("Label run min length:  {}", stats.color_run_min);
+            println!("Label run max length:  {}", stats.color_run_max);
+            println!("Label run mean length: {:.2}", stats.color_run_mean);
+            println!();
+            println!("{:<10}  {}", "Count", "Label name");
+            println!("{:<10}  {}", stats.uncolored, "none");
+            for (id, name) in index.labeling().hierarchy.names().iter().enumerate() {
+                println!("{:<10}  {}", stats.color_counts[id], name);
+            }
+        },
+
+        Subcommands::NodeStats { index: index_path, labeling_file, report_color_ids, n_threads } => {
+            let index = load_index(&index_path, labeling_file);
+            compute_node_stats(index, !report_color_ids, n_threads);
+        },
+
+        Subcommands::PrintHierarchy { index: index_path, labeling_file } => {
+            let index = load_index(&index_path, labeling_file);
+            let names = index.labeling().hierarchy.names();
+            let tree = index.labeling().hierarchy.tree();
+            let n = tree.n_nodes();
+            println!("{}", n);
+            for name in names {
+                println!("{}", name);
+            }
+            for node in 0..n {
+                if node != tree.root() {
+                    println!("{} {}", names[node], names[tree.parent(node)]);
+                }
+            }
+        },
+
         Subcommands::LookupDebug{query: query_path, index: index_path, labeling_file} => {
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
-            let index = open_index(&index_path, labeling_file);
+            let index = load_index(&index_path, labeling_file);
             log::info!("Index loaded in {} seconds", index_loading_start.elapsed().as_secs_f64());
             log::info!("Running query debug implementation for {} ...", query_path.display());
 
-            match index {
-                ColorIndex::FixedK(index) => {
-                    single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k());
-                },
-            }
+            single_threaded_queries::lookup_single_threaded(&query_path, &index, index.k());
         }
     }
 }
