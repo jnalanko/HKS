@@ -15,7 +15,7 @@ use sbwt::{ContractLeft, LcsArray, MatchingStatisticsIterator, SbwtIndex, SeqStr
 use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 use crate::priority_lca::PriorityLca;
-use crate::single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
+use crate::single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling};
 use crate::traits::*;
 
 /// Build a new index from input sequences. If `priorities` is `Some`, uses
@@ -49,7 +49,7 @@ where
 /// Build a new labeling from an existing index (sbwt + lcs) and input streams.
 /// The result can be serialized to a standalone labeling file.
 pub fn build_labeling<L, C, T>(
-    index: &HksIndex<L, C>,
+    base: &HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     hierarchy: ColorHierarchy,
@@ -62,7 +62,7 @@ where
     T: SeqStream + Send,
 {
     let color_storage = mark_colors_with_priorities::<T, L>(
-        index.sbwt(), index.lcs(), input_streams, n_threads, &hierarchy, priorities,
+        base, input_streams, n_threads, &hierarchy, priorities,
     );
 
     log::info!("Indexing color id array");
@@ -73,9 +73,8 @@ where
 /// Resolve priorities (or absence thereof) into a merge closure and run
 /// `mark_colors_dispatch`. This is the single choke point where priorities
 /// exist; everything below sees only an `Fn(usize, usize) -> usize`.
-fn mark_colors_with_priorities<T, CL>(
-    sbwt: &SbwtIndex<SubsetMatrix>,
-    lcs: &CL,
+fn mark_colors_with_priorities<T, C, L>(
+    base: &HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     hierarchy: &ColorHierarchy,
@@ -83,7 +82,8 @@ fn mark_colors_with_priorities<T, CL>(
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
-    CL: ContractLeft + Sync,
+    C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>,
+    L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
 {
     let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1);
     let tree = hierarchy.tree();
@@ -94,11 +94,11 @@ where
             let plca = PriorityLca::new(tree, p)
                 .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
             let plca_override = |a,b| Some(plca.plca(a, b));
-            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &plca_override)
+            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &plca_override)
         }
         None => {
             let no_override = |_: usize, _: usize| None;
-            mark_colors_dispatch::<T, CL, _>(sbwt, lcs, input_streams, n_threads, required_bit_width, tree, &no_override)
+            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &no_override)
         }
     }
 }
@@ -108,9 +108,8 @@ where
 /// `mark_colors` lives in one place. The lca_override function takes a pair
 /// of nodes and returns Some(node) if we want to override the LCA with that
 /// node instead, otherwise None.
-fn mark_colors_dispatch<T, CL, F>(
-    sbwt: &SbwtIndex<SubsetMatrix>,
-    lcs: &CL,
+fn mark_colors_dispatch<T, L, F>(
+    base: HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     required_bit_width: usize,
@@ -119,23 +118,22 @@ fn mark_colors_dispatch<T, CL, F>(
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
-    CL: ContractLeft + Sync,
+    L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
     F: Fn(usize, usize) -> Option<usize> + Sync,
 {
     if required_bit_width <= 8 {
-        mark_colors::<T, Vec<AtomicU8>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Vec<AtomicU8>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
     } else if required_bit_width <= 16 {
-        mark_colors::<T, Vec<AtomicU16>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Vec<AtomicU16>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
     } else if required_bit_width <= 32 {
-        mark_colors::<T, Vec<AtomicU32>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Vec<AtomicU32>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
     } else {
-        mark_colors::<T, Vec<AtomicU64>, CL, F>(sbwt, lcs, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Vec<AtomicU64>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
     }
 }
 
-fn mark_colors<T, A, CL, F>(
-    sbwt: &SbwtIndex<SubsetMatrix>,
-    lcs: &CL,
+fn mark_colors<T, A, L, F>(
+    base: HksBase<L>,
     input_streams: Vec<T>,
     n_threads: usize,
     color_hierarchy: &LcaTree,
@@ -144,9 +142,12 @@ fn mark_colors<T, A, CL, F>(
 where
     T: SeqStream + Send,
     A: AtomicColorVec + Send + Sync,
-    CL: ContractLeft + Sync,
+    L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
     F: Fn(usize, usize) -> Option<usize> + Sync,
 {
+
+    let sbwt = base.sbwt();
+    let lcs = base.lcs();
     let color_ids = A::new(sbwt.n_sets());
     let si = StreamingIndex {
         extend_right: sbwt,

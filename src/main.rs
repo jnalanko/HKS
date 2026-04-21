@@ -729,11 +729,9 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::BuildBase { s, input, input_file_list, output, temp_dir, forward_only, n_threads, sbwt_path, lcs_path  } => {
+        Subcommands::BuildBase { s, input, input_file_list, output: out_path, temp_dir, forward_only, n_threads, sbwt_path, lcs_path  } => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
-
-            let out_path = output;
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {
@@ -742,7 +740,7 @@ fn main() {
                 }
             }
             // Open output file early to fail early if there is a problem
-            let mut output_writer = BufWriter::new(File::create(output).unwrap());
+            let mut output_writer = BufWriter::new(File::create(&out_path).unwrap());
 
             let add_rev_comps = !forward_only;
 
@@ -758,7 +756,7 @@ fn main() {
             let lcs = LcsWrapper::from(lcs);
             let base = HksBase::new(sbwt, lcs);
 
-            log::info!("Writing base to {}", output.display());
+            log::info!("Writing base to {}", out_path.display());
             base.serialize(&mut output_writer);
         },
 
@@ -839,7 +837,7 @@ fn main() {
             }
         },
 
-        Subcommands::AddLabeling { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
+        Subcommands::AddFeatureSet { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --feature-file-list or --feature-per-seq-file is required");
             }
@@ -857,20 +855,16 @@ fn main() {
             let mut type_id = [0_u8; 4];
             base_input.read_exact(&mut type_id).unwrap();
             assert_eq!(type_id, FIXED_INDEX_TYPE_ID, "Unsupported index type");
-            let (sbwt, lcs) = FixedKColorIndex::load_base(&mut base_input);
-            let dummy_index = FixedKColorIndex::from_parts(sbwt, lcs,
-                // Temporary placeholder feature set — only sbwt/lcs are used for coloring
-                Labeling { color_assignments: SimpleColorStorage::new(0, 1), hierarchy: ColorHierarchy::new_star(vec!["placeholder".to_string()]), name: String::new() }
-            );
+            let base = HksBase::<LcsWrapper>::load(&mut base_input);
 
-            let labeling = if let Some(fof) = label_by_file {
+            let labeling: Labeling<SimpleColorStorage> = if let Some(fof) = label_by_file {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_labeling(&dummy_index, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
+                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
             } else {
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_labeling(&dummy_index, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
+                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
             };
 
             if let Some(parent) = labeling_out_path.parent() {

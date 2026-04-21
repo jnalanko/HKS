@@ -27,6 +27,14 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
         Self { sbwt, lcs }
     }
 
+    pub fn sbwt(&self) -> &SbwtIndex<SubsetMatrix> {
+        &self.sbwt
+    }
+
+    pub fn lcs(&self) -> &L {
+        &self.lcs
+    }
+
     fn base_serialization_version() -> u32 {
         7_u32
     }
