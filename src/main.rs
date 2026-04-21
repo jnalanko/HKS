@@ -233,7 +233,7 @@ fn open_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> ColorInde
     let mut base_input = BufReader::new(File::open(index_path)
         .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
     let mut fs_input = BufReader::new(File::open(&labeling_path)
-        .unwrap_or_else(|e| panic!("Could not open labeling file {}: {e}", labeling_path.display())));
+        .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
     ColorIndex::load(&mut base_input, &mut fs_input)
 }
 
@@ -284,7 +284,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the existing base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Output filename for the new labeling file", short, long, required = true)]
+        #[arg(help = "Output filename for the new feature set file", short, long, required = true)]
         output: PathBuf,
 
         #[arg(help = "A file with one fasta/fastq filename per line, one per feature. All k-mers in these files must already be present in the index.", long = "feature-file-list", help_heading = "Features", conflicts_with = "label_by_seq")]
@@ -318,7 +318,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
@@ -337,7 +337,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Query k-mer length for this session. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.", short, required = false, value_parser = clap::value_parser!(u64).range(1..=256))]
@@ -352,7 +352,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
     },
 
@@ -361,7 +361,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
 
         #[arg(help = "Print internal label ids instead of label names.", long = "report-label-ids")]
@@ -376,7 +376,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
     },
 
@@ -388,7 +388,7 @@ pub enum Subcommands {
         #[arg(help = "Path to the base index file", short, long, required = true)]
         index: PathBuf,
 
-        #[arg(help = "Path to the labeling file. Defaults to the base index path with extension .hksf.", long = "labeling-file")]
+        #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
     },
 
