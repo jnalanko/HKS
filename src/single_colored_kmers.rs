@@ -11,46 +11,30 @@ use crate::traits::*;
 
 #[derive(Debug, Clone)]
 pub struct HksIndex<L: ContractLeft + Clone + MySerialize + From<LcsArray>, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
-    sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
-    lcs: L,
+    base: HksBase<L>,
     labeling: Labeling<C>,
 }
 
-impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> HksIndex<L, C> {
+#[derive(Debug, Clone)]
+pub struct HksBase<L: ContractLeft + Clone + MySerialize + From<LcsArray>> {
+    sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>,
+    lcs: L,
+}
 
-    pub fn labeling(&self) -> &Labeling<C> {
-        &self.labeling
-    }
+impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
 
-    pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, Labeling<C>) {
-        (self.sbwt, self.lcs, self.labeling)
-    }
-
-    pub fn rename_labels(&mut self, new_names: Vec<String>) {
-        self.labeling.hierarchy.rename_labels(new_names);
-    }
-
-    pub fn k(&self) -> usize {
-        self.sbwt.k()
-    }
-
-    pub fn sbwt(&self) -> &SbwtIndex<SubsetMatrix> {
-        &self.sbwt
-    }
-
-    pub fn lcs(&self) -> &L {
-        &self.lcs
-    }
-
-    fn base_serialization_magic() -> [u8; 4] {
-        [17, 42, 191, 203]
+    pub fn new(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L) -> Self {
+        Self { sbwt, lcs }
     }
 
     fn base_serialization_version() -> u32 {
         7_u32
     }
+    fn base_serialization_magic() -> [u8; 4] {
+        [17, 42, 191, 203]
+    }
 
-    pub fn serialize_base(&self, mut out: &mut impl Write) {
+    pub fn serialize(&self, out: &mut impl Write) {
         out.write_all(&Self::base_serialization_magic()).unwrap();
         out.write_all(&Self::base_serialization_version().to_le_bytes()).unwrap();
         self.sbwt.serialize(out).unwrap();
@@ -59,7 +43,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
 
     /// Load sbwt and lcs from a base index file. Use `from_parts` to combine with a loaded
     /// `Labeling` into a full `HksIndex`.
-    pub fn load_base(mut input: &mut impl Read) -> (SbwtIndex<SubsetMatrix>, L) {
+    pub fn load(input: &mut impl Read) -> (SbwtIndex<SubsetMatrix>, L) {
         let mut magic = [0_u8; 4];
         input.read_exact(&mut magic).unwrap();
         if magic != Self::base_serialization_magic() {
@@ -77,13 +61,50 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         let lcs = *L::load(input);
         (sbwt, lcs)
     }
+}
+
+impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> HksIndex<L, C> {
+
+    pub fn base(&self) -> &HksBase<L> {
+        &self.base
+    }
+
+    pub fn labeling(&self) -> &Labeling<C> {
+        &self.labeling
+    }
+
+    pub fn into_parts(self) -> (SbwtIndex<SubsetMatrix>, L, Labeling<C>) {
+        (self.base.sbwt, self.base.lcs, self.labeling)
+    }
+
+    /// Build a new index from already-converted parts. Use after `new_with_labeling`
+    /// during construction, or after `load_base` + `FeatureSet::load_from_file` during loading.
+    pub fn from_parts(base: HksBase<L>, labeling: Labeling<C>) -> Self {
+        HksIndex::<L, C> { base , labeling }
+    }
+
+    pub fn rename_labels(&mut self, new_names: Vec<String>) {
+        self.labeling.hierarchy.rename_labels(new_names);
+    }
+
+    pub fn k(&self) -> usize {
+        self.base.sbwt.k()
+    }
+
+    pub fn sbwt(&self) -> &SbwtIndex<SubsetMatrix> {
+        &self.base.sbwt
+    }
+
+    pub fn lcs(&self) -> &L {
+        &self.base.lcs
+    }
 
     pub fn n_kmers(&self) -> usize {
-        self.sbwt.n_kmers()
+        self.base.sbwt.n_kmers()
     }
 
     fn color_run_stats(&self) -> (usize, usize, f64) { // (min, max, mean)
-        let n = self.sbwt.n_sets();
+        let n = self.base.sbwt.n_sets();
         if n == 0 { return (0, 0, 0.0); }
 
         let mut min = usize::MAX;
@@ -114,7 +135,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         let mut uncolored = 0_usize;
         let mut colored = 0_usize;
         let mut color_counts = vec![0_usize; self.labeling.hierarchy.n_nodes()];
-        for i in 0..self.sbwt.n_sets() {
+        for i in 0..self.base.sbwt.n_sets() {
             match self.get_color(i) {
                 Some(id) => { colored += 1; color_counts[id] += 1; },
                 None => uncolored += 1,
@@ -125,12 +146,12 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     }
 
     pub fn get_color(&self, colex: usize) -> Option<usize> {
-        assert!(colex < self.sbwt.n_sets());
+        assert!(colex < self.base.sbwt.n_sets());
         self.labeling.color_assignments.get_color(colex)
     }
 
     pub fn get_color_of_range(&self, colex_range: Range<usize>) -> Option<usize> {
-        assert!(colex_range.end <= self.sbwt.n_sets());
+        assert!(colex_range.end <= self.base.sbwt.n_sets());
         let fs = &self.labeling;
         fs.color_assignments.get_color_of_range(colex_range, fs.hierarchy.tree())
     }
@@ -139,12 +160,12 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     // k must be less or equal to the k in the SBWT index.
     // If query is shorter than k, returns an empty iterator.
     pub fn lookup_kmers<'a, 'b>(&'a self, query: &'b [u8], k: usize) -> KmerLookupIterator<'a, 'b, L, C>{
-        assert!(k <= self.sbwt.k());
+        assert!(k <= self.base.sbwt.k());
         let si = StreamingIndex {
-            extend_right: &self.sbwt,
-            contract_left: &self.lcs,
-            n: self.sbwt.n_sets(),
-            k: self.sbwt.k(),
+            extend_right: &self.base.sbwt,
+            contract_left: &self.base.lcs,
+            n: self.base.sbwt.n_sets(),
+            k: self.base.sbwt.k(),
         };
 
         //let mut ms_iter = si.bounded_matching_statistics_iter(query, k);
@@ -157,26 +178,21 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         KmerLookupIterator { matching_stats_iter: ms_iter, index: self, query_pattern_length: k, labeling: &self.labeling }
     }
 
-    /// Build a new index from already-converted parts. Use after `new_with_labeling`
-    /// during construction, or after `load_base` + `FeatureSet::load_from_file` during loading.
-    pub fn from_parts(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: L, labeling: Labeling<C>) -> Self {
-        HksIndex::<L, C> { sbwt, lcs, labeling }
-    }
-
     /// Build a new index from raw construction outputs. Converts the `LcsArray` to `L`.
-    pub fn new_with_labeling(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, lcs: sbwt::LcsArray, labeling: Labeling<C>) -> Self {
+    pub fn new_with_labeling(sbwt: sbwt::SbwtIndex<sbwt::SubsetMatrix>, raw_lcs: sbwt::LcsArray, labeling: Labeling<C>) -> Self {
         log::info!("Indexing LCS array");
-        let lcs_index = L::from(lcs);
+        let lcs_index = L::from(raw_lcs);
+        let base = HksBase{ sbwt, lcs: lcs_index };
         log::info!("Color structure construction complete");
-        HksIndex::<L, C> { sbwt, lcs: lcs_index, labeling }
+        HksIndex::<L, C> { base, labeling }
     }
 
     pub fn n_sbwt_sets(&self) -> usize {
-        self.sbwt.n_sets()
+        self.base.sbwt.n_sets()
     }
 
     pub fn build_sbwt_select(&mut self) {
-        self.sbwt.build_select();
+        self.base.sbwt.build_select();
     }
 
     // S is the s-mer length, s <= k
@@ -186,7 +202,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
     pub fn node_stats(&self, s: usize, dummy_marks: &BitSlice) -> Vec<usize> {
         let labeling = &self.labeling;
         let mut counts = vec![0; labeling.hierarchy.n_nodes()];
-        assert!(s <= self.sbwt.k());
+        assert!(s <= self.base.sbwt.k());
         let n = self.n_sbwt_sets();
 
         // Sweep through every maximal run of positions whose consecutive LCS >= s
@@ -194,13 +210,13 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
         // colors in the run.
         let mut run_start = 0usize;
         for run_end in 1..=n {
-            let run_continues = run_end < n && self.lcs.get_lcs(run_end) >= s;
+            let run_continues = run_end < n && self.base.lcs.get_lcs(run_end) >= s;
             if !run_continues {
                 // Run is run_start..colex
                 let mut lca: Option<usize> = None;
                 if run_end - run_start == 1 && dummy_marks[run_start] {
                     // We must only count this if the dummy has length at least s.
-                    let dummy_len = self.sbwt.access_kmer(run_start).iter().filter(|c| **c != b'$').count();
+                    let dummy_len = self.base.sbwt.access_kmer(run_start).iter().filter(|c| **c != b'$').count();
                     if dummy_len >= s {
                         lca = labeling.hierarchy.tree().lca_options(lca, labeling.color_assignments.get_color(run_start));
                     }
@@ -245,7 +261,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                 return Some(self.index.get_color(range.start))
             }
 
-            let lcs = &self.index.lcs;
+            let lcs = &self.index.base.lcs;
             let label_tree = &self.labeling.hierarchy.tree;
             let root_id = label_tree.root();
 
@@ -261,7 +277,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess, C: Colo
                 color = label_tree.lca_options(color, self.index.get_color(new_start));
                 if color == Some(root_id) { return Some(color) } // This is a Some(Some(color)). Means that the iterator produced something.
             }
-            let n = self.index.sbwt.n_sets();
+            let n = self.index.base.sbwt.n_sets();
             while new_end < n && lcs.get_lcs(new_end) >= self.query_pattern_length {
                 color = label_tree.lca_options(color, self.index.get_color(new_end));
                 if color == Some(root_id) { return Some(color) } // This is a Some(Some(color)). Means that the iterator produced something.
@@ -420,11 +436,11 @@ pub struct SingleColoredKmersShort<L: ContractLeft + Clone + MySerialize + From<
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync + Send, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> SingleColoredKmersShort<L,C> {
 
     pub fn new(mut index: HksIndex<L, C>, k: usize, n_threads: usize) -> Self {
-        assert!(k <= index.sbwt.k());
-        if k < index.sbwt.k() {
+        assert!(k <= index.k());
+        if k < index.k() {
             let fs = &mut index.labeling;
             log::info!("Preprocessing colors for {}-mer queries for labeling: {}", k, fs.name);
-            fs.color_assignments.substitute_lca_for_s_mer_ranges(k, fs.hierarchy.tree(), &index.lcs, n_threads);
+            fs.color_assignments.substitute_lca_for_s_mer_ranges(k, fs.hierarchy.tree(), &index.base.lcs, n_threads);
         }
 
         Self { inner: index, k }

@@ -8,7 +8,7 @@ use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtInde
 use single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
 use parallel_queries::OutputWriter;
 
-use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
+use crate::{color_storage::SimpleColorStorage, lca_tree::LcaTree, parallel_queries::RunWriter, single_colored_kmers::{ColorStats, HksBase, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
 
 mod single_colored_kmers;
 mod build;
@@ -289,16 +289,20 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Subcommands {
+
     #[command(arg_required_else_help = true)]
-    Build {
+    BuildBase {
         #[arg(short, required = true, default_value = "31", help = "Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction.", value_parser = clap::value_parser!(u64).range(1..=256))] // 256 is an upper limit of SBWT
         s: u64,
 
-        #[arg(help = "A file with one fasta/fastq filename per line, one per feature", long = "feature-file-list", help_heading = "Features", conflicts_with = "label_by_seq")]
-        label_by_file: Option<PathBuf>,
+        #[arg(help = "Input fasta/fastq file. For multiple input files, see --input-file-list.", long, help_heading = "Input", conflicts_with = "input_file_list")]
+        input: Option<PathBuf>,
 
-        #[arg(help = "Output path prefix. Writes <PREFIX>.hksb (base index) and <PREFIX>.hksf (labeling).", short = 'o', long = "output-prefix", required = true)]
-        output_prefix: PathBuf,
+        #[arg(help = "A file with one input fasta/fastq filename per line.", long, help_heading = "Advanced", conflicts_with = "input")]
+        input_file_list: Option<PathBuf>,
+
+        #[arg(help = "Output filename. Recommended file extension: .hksb", short = 'o', long = "output", required = true)]
+        output: PathBuf,
 
         #[arg(help = "Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.", long = "external-memory")]
         temp_dir: Option<PathBuf>,
@@ -314,32 +318,6 @@ pub enum Subcommands {
 
         #[arg(help = "Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths", long = "load-lcs", help_heading = "Advanced use")]
         lcs_path: Option<PathBuf>,
-
-        // The reserved names are hardcoded here because concat!() only accepts literals, not slice elements.
-        // If RESERVED_COLOR_NAMES changes, update this help text accordingly.
-        #[arg(help = "Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names. The name \"none\" is reserved and cannot be used.", long = "feature-names", help_heading = "Features")]
-        names: Option<PathBuf>,
-
-        #[arg(help = "Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named \"root\").", long = "feature-hierarchy", help_heading = "Features")]
-        hierarchy: Option<PathBuf>,
-
-        #[arg(help = "Name for the feature set", long = "feature-set-name", help_heading = "Features", default_value = "unnamed")]
-        labeling_name: String,
-
-        #[arg(help = "Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).", long = "save-sbwt-and-lcs", help_heading = "Advanced use")]
-        sbwt_and_lcs_save_prefix: Option<PathBuf>,
-
-        #[arg(help = "Instead of one file per feature, give input as a single FASTA file, one sequence per feature.", long = "feature-per-seq-file", help_heading = "Advanced use", conflicts_with = "label_by_file")]
-        label_by_seq: Option<PathBuf>,
-
-        #[arg(help = "Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage.", short, long, help_heading = "Advanced use")]
-        unitigs: Option<PathBuf>,
-
-        #[arg(help = "Optional: a file assigning an integer priority to every node in the feature hierarchy (one \"<name> <priority>\" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction, which keeps k-mers specific to high-priority subtrees rather than merging them to their common ancestor. Priorities are used during construction only and are not stored in the index. Warning: this makes construction use O(n^2) memory in the worst case, where n is the number of features in the hierarchy.", long = "feature-priorities", help_heading = "Advanced use")]
-        node_priorities: Option<PathBuf>,
-
-
-
     },
 
     #[command(arg_required_else_help = true)]
@@ -409,8 +387,7 @@ pub enum Subcommands {
         labeling_file: Option<PathBuf>,
     },
 
-    #[command(name = "add-feature-set", arg_required_else_help = true, about = "Build a new labeling for an existing base index and write it to a file.")]
-    AddLabeling {
+    AddFeatureSet {
         #[arg(help = "Path to the existing base index file", short, long, required = true)]
         index: PathBuf,
 
@@ -752,12 +729,11 @@ fn main() {
     let args = Cli::parse();
 
     match args.command {
-        Subcommands::Build { label_by_file, label_by_seq, unitigs: unitigs_path, output_prefix, temp_dir, s, n_threads, forward_only, sbwt_path, lcs_path, names: label_names_file, hierarchy: hierarchy_path, node_priorities: node_priorities_path, sbwt_and_lcs_save_prefix, labeling_name} => {
+        Subcommands::BuildBase { s, input, input_file_list, output, temp_dir, forward_only, n_threads, sbwt_path, lcs_path  } => {
 
             let (s, n_threads) = (s as usize, n_threads as usize);
 
-            let out_path = output_prefix.with_extension("hksb");
-            let labeling_output = output_prefix.with_extension("hksf");
+            let out_path = output;
 
             // Create output directory if does not exist
             if let Some(parent) = out_path.parent() {
@@ -765,41 +741,25 @@ fn main() {
                     std::fs::create_dir_all(parent).unwrap();
                 }
             }
+            // Open output file early to fail early if there is a problem
+            let mut output_writer = BufWriter::new(File::create(output).unwrap());
 
             let add_rev_comps = !forward_only;
 
             // Determine SBWT inputs (all sequences together for k-mer set building)
-            let sbwt_input_stream = if let Some(unitigs_path) = unitigs_path {
-                io::ChainedInputStream::new(vec![unitigs_path.clone()])
+            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref input_fof) = input_file_list {
+                read_all_lines(input_fof).into_iter().map(|line| PathBuf::from(line)).collect()
             } else {
-                let sbwt_input_paths: Vec<PathBuf> = if let Some(ref lbf) = label_by_file {
-                    read_all_lines(lbf).into_iter().map(|line| PathBuf::from(line)).collect()
-                } else {
-                    vec![label_by_seq.as_ref().unwrap().clone()]
-                };
-                io::ChainedInputStream::new(sbwt_input_paths)
+                vec![input.as_ref().unwrap().clone()]
             };
-            if let Some(fof) = label_by_file {
-                // TODO: most of this code is duplicated in the else-branch. Refactor to extract the shared logic.
-                // We load the coloring input first so we fail early if there is something wrong with it
-                let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
-                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
-                let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
-                save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
-                let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, labeling_output, hierarchy, &labeling_name, priorities);
-            } else {
-                // We load the coloring input first so we fail early if there is something wrong with it
-                let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
-                let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
-                let sbwt_variant = SbwtIndexVariant::SubsetMatrix(sbwt); // Need to save in this form so that it has the type id like in sbwt-rs-cli
-                save_sbwt_and_lcs_if_requested(&sbwt_variant, &lcs, &sbwt_and_lcs_save_prefix);
-                let SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt_variant; // Get back the inner sbwt
-                add_colors(sbwt, lcs, individual_streams, n_threads, out_path, labeling_output, hierarchy, &labeling_name, priorities);
-            }
+            let sbwt_input_stream = io::ChainedInputStream::new(sbwt_input_paths);
+            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
 
+            let lcs = LcsWrapper::from(lcs);
+            let base = HksBase::new(sbwt, lcs);
+
+            log::info!("Writing base to {}", output.display());
+            base.serialize(&mut output_writer);
         },
 
         Subcommands::Lookup { index: index_path, labeling_file, k, n_threads, query_args } => {
