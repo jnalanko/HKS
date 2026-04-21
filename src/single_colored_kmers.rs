@@ -9,6 +9,13 @@ use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 use crate::traits::*;
 
+const BASE_FILE_MAGIC: [u8; 8] = *b"hksba0.1";
+const BASE_FILE_VERSION: u32 = 1;
+
+const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
+const LABELING_FILE_VERSION: u32 = 1;
+
+
 #[derive(Debug, Clone)]
 pub struct HksIndex<L: ContractLeft + Clone + MySerialize + From<LcsArray>, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
     base: HksBase<L>,
@@ -45,7 +52,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
     /// Load sbwt and lcs from a base index file. Use `from_parts` to combine with a loaded
     /// `Labeling` into a full `HksIndex`.
     pub fn load(input: &mut impl Read) -> Self {
-        let mut magic = [0_u8; 4];
+        let mut magic = [0_u8; 8];
         input.read_exact(&mut magic).unwrap();
         if magic != BASE_FILE_MAGIC {
             panic!("Error loading index: invalid file format (magic constant mismatch)");
@@ -365,12 +372,6 @@ impl ColorHierarchy {
         Self { tree, names }
     }
 }
-
-const BASE_FILE_MAGIC: [u8; 4] = [17, 42, 191, 203];
-const BASE_FILE_VERSION: u32 = 7;
-
-const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
-const LABELING_FILE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct Labeling<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> {
