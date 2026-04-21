@@ -836,13 +836,6 @@ fn main() {
             log::info!("Loading the base index ...");
             let mut base_input = BufReader::new(File::open(&index_path)
                 .unwrap_or_else(|e| panic!("Could not open index file {}: {e}", index_path.display())));
-            // Read and discard the outer HKS file header to reach the HksIndex base data
-            let mut file_id = [0_u8; 8];
-            base_input.read_exact(&mut file_id).unwrap();
-            assert_eq!(file_id, HKS_FILE_ID, "Invalid HKS file ID");
-            let mut type_id = [0_u8; 4];
-            base_input.read_exact(&mut type_id).unwrap();
-            assert_eq!(type_id, FIXED_INDEX_TYPE_ID, "Unsupported index type");
             let base = HksBase::<LcsWrapper>::load(&mut base_input);
 
             let labeling: Labeling<SimpleColorStorage> = if let Some(fof) = label_by_file {
