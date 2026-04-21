@@ -563,48 +563,62 @@ fn save_sbwt_and_lcs_if_requested(sbwt: &SbwtIndexVariant, lcs: &LcsArray, prefi
     }
 }
 
-fn get_sbwt_and_lcs(sbwt_path: Option<PathBuf>, lcs_path: Option<PathBuf>, temp_dir: Option<PathBuf>, all_input_seqs: io::ChainedInputStream, n_threads: usize, add_rev_comps: bool, s: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
-    if let Some(sbwt_path) = sbwt_path {
-        let mut input = BufReader::new(File::open(&sbwt_path)
-            .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
-        let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
-        log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
-        let lcs = if let Some(lcs_path) = lcs_path {
-            LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
-                .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
-        } else {
-            LcsArray::from_sbwt(&sbwt, n_threads)
-        };
-        if sbwt.k() != s {
-            panic!("The s specified ({}) does not match the k of the provided SBWT ({})", s, sbwt.k());
+struct SbwtBuildOptions {
+    seqs: io::ChainedInputStream,
+    s: usize,
+    add_rev_comps: bool,
+    temp_dir: Option<PathBuf>,
+}
+
+enum SbwtSource {
+    ComputeFromSeqs(SbwtBuildOptions),
+    LoadFromDisk(PathBuf),
+}
+
+fn get_sbwt_and_lcs(sbwt_source: SbwtSource, lcs_path: Option<PathBuf>, n_threads: usize) -> (SbwtIndex<SubsetMatrix>, LcsArray){
+    match sbwt_source {
+        SbwtSource::ComputeFromSeqs(opts) => {
+            // TODO: if lcs_path is given, use it instead of computing from the sbwt
+            let (sbwt, lcs) = if let Some(td) = opts.temp_dir {
+                // Use disk-based construction
+                sbwt::SbwtIndexBuilder::new()
+                    .add_rev_comp(opts.add_rev_comps)
+                    .k(opts.s)
+                    .build_lcs(true)
+                    .n_threads(n_threads)
+                    .precalc_length(8)
+                    .add_all_dummy_paths(true) // This is required for multi-k support
+                    .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
+                .run(opts.seqs)
+            } else {
+                // Use in-memory construction
+                sbwt::SbwtIndexBuilder::new()
+                    .add_rev_comp(opts.add_rev_comps)
+                    .k(opts.s)
+                    .build_lcs(true)
+                    .n_threads(n_threads)
+                    .precalc_length(8)
+                    .add_all_dummy_paths(true) // This is required for multi-k support
+                    .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
+                .run(opts.seqs)
+            };
+            let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
+            (sbwt, lcs)
+        },
+        SbwtSource::LoadFromDisk(sbwt_path) => {
+            let mut input = BufReader::new(File::open(&sbwt_path)
+                .unwrap_or_else(|e| panic!("Could not open SBWT file {}: {e}", sbwt_path.display())));
+            let sbwt::SbwtIndexVariant::SubsetMatrix(sbwt) = sbwt::load_sbwt_index_variant(&mut input).unwrap();
+            log::info!("Loaded SBWT with {} k-mers", sbwt.n_kmers());
+
+            let lcs = if let Some(lcs_path) = lcs_path {
+                LcsArray::load(&mut BufReader::new(File::open(&lcs_path)
+                    .unwrap_or_else(|e| panic!("Could not open LCS file {}: {e}", lcs_path.display())))).unwrap()
+            } else {
+                LcsArray::from_sbwt(&sbwt, n_threads)
+            };
+            (sbwt, lcs)
         }
-        (sbwt, lcs)
-    } else {
-        let (sbwt, lcs) = if let Some(td) = temp_dir {
-            // Use disk-based construction
-            sbwt::SbwtIndexBuilder::new()
-                .add_rev_comp(add_rev_comps)
-                .k(s)
-                .build_lcs(true)
-                .n_threads(n_threads)
-                .precalc_length(8)
-                .add_all_dummy_paths(true) // This is required for multi-k support
-                .algorithm(BitPackedKmerSortingDisk::new().dedup_batches(false).temp_dir(&td))
-            .run(all_input_seqs)
-        } else {
-            // Use in-memory construction
-            sbwt::SbwtIndexBuilder::new()
-                .add_rev_comp(add_rev_comps)
-                .k(s)
-                .build_lcs(true)
-                .n_threads(n_threads)
-                .precalc_length(8)
-                .add_all_dummy_paths(true) // This is required for multi-k support
-                .algorithm(BitPackedKmerSortingMem::new().dedup_batches(false))
-            .run(all_input_seqs)
-        };
-        let lcs = lcs.unwrap(); // Ok because of build_lcs(true)
-        (sbwt, lcs)
     }
 }
 
@@ -697,20 +711,36 @@ fn main() {
                     std::fs::create_dir_all(parent).unwrap();
                 }
             }
+
             // Open output file early to fail early if there is a problem
             let mut output_writer = BufWriter::new(File::create(&out_path).unwrap());
 
-            let add_rev_comps = !forward_only;
+            let (sbwt, lcs) = match sbwt_path {
+                Some(sbwt_path) => {
+                    get_sbwt_and_lcs(SbwtSource::LoadFromDisk(sbwt_path), lcs_path, n_threads)
+                }
+                None => {
+                    let add_rev_comps = !forward_only;
 
-            // Determine SBWT inputs (all sequences together for k-mer set building)
-            let sbwt_input_paths: Vec<PathBuf> = if let Some(ref input_fof) = input_file_list {
-                read_all_lines(input_fof).into_iter().map(|line| PathBuf::from(line)).collect()
-            } else {
-                vec![input.as_ref().unwrap().clone()]
+                    // Determine SBWT inputs (all sequences together for k-mer set building)
+                    let sbwt_input_paths: Vec<PathBuf> = if let Some(ref input_fof) = input_file_list {
+                        read_all_lines(input_fof).into_iter().map(PathBuf::from).collect()
+                    } else {
+                        vec![input.as_ref().unwrap().clone()]
+                    };
+                    let sbwt_input_stream = io::ChainedInputStream::new(sbwt_input_paths);
+                    let sbwt_build_opts = SbwtBuildOptions{
+                        seqs: sbwt_input_stream,
+                        s,
+                        add_rev_comps,
+                        temp_dir,
+                    };
+
+                    get_sbwt_and_lcs(SbwtSource::ComputeFromSeqs(sbwt_build_opts), lcs_path, n_threads)
+                }
             };
-            let sbwt_input_stream = io::ChainedInputStream::new(sbwt_input_paths);
-            let (sbwt, lcs) = get_sbwt_and_lcs(sbwt_path, lcs_path, temp_dir, sbwt_input_stream, n_threads, add_rev_comps, s);
 
+            // Package into HksBase
             let lcs = LcsWrapper::from(lcs);
             let base = HksBase::new(sbwt, lcs);
 
