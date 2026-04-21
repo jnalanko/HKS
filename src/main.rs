@@ -46,7 +46,7 @@ impl ColorIndex {
             ColorIndex::FixedK(index) => {
                 out.write_all(&HKS_FILE_ID).unwrap();
                 out.write_all(&FIXED_INDEX_TYPE_ID).unwrap();
-                index.serialize_base(out);
+                index.base().serialize(out);
             },
         }
     }
@@ -60,9 +60,9 @@ impl ColorIndex {
         base_input.read_exact(&mut type_id).unwrap();
         match type_id {
             FIXED_INDEX_TYPE_ID => {
-                let (sbwt, lcs) = FixedKColorIndex::load_base(base_input);
+                let base = HksBase::<LcsWrapper>::load(base_input);
                 let labeling = Labeling::<SimpleColorStorage>::load_from_file(fs_input);
-                let index = FixedKColorIndex::from_parts(sbwt, lcs, labeling);
+                let index = FixedKColorIndex::from_parts(base, labeling);
                 log::info!("Loaded index with s = {}", index.k());
                 ColorIndex::FixedK(index)
             },

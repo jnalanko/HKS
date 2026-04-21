@@ -43,7 +43,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
 
     /// Load sbwt and lcs from a base index file. Use `from_parts` to combine with a loaded
     /// `Labeling` into a full `HksIndex`.
-    pub fn load(input: &mut impl Read) -> (SbwtIndex<SubsetMatrix>, L) {
+    pub fn load(input: &mut impl Read) -> Self {
         let mut magic = [0_u8; 4];
         input.read_exact(&mut magic).unwrap();
         if magic != Self::base_serialization_magic() {
@@ -59,7 +59,7 @@ impl<L: ContractLeft + Clone + MySerialize + From<LcsArray>> HksBase<L> {
 
         let sbwt = SbwtIndex::<sbwt::SubsetMatrix>::load(input).unwrap();
         let lcs = *L::load(input);
-        (sbwt, lcs)
+        Self { sbwt, lcs }
     }
 }
 
