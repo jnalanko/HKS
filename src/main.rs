@@ -22,6 +22,7 @@ mod util;
 mod wavelet_tree;
 mod traits;
 mod color_storage;
+mod smooth;
 
 type FixedKColorIndex = HksIndex<LcsWrapper, SimpleColorStorage>;
 type ShortKColorIndex = SingleColoredKmersShort<LcsWrapper, SimpleColorStorage>;
@@ -173,6 +174,21 @@ pub enum Subcommands {
 
         #[arg(help = "Path to the feature set file. Defaults to the base index path with extension .hksf.", long = "feature-set-file")]
         labeling_file: Option<PathBuf>,
+    },
+
+    #[command(about = "Apply hierarchy-aware smoothing to lookup output (Algorithm S1).")]
+    Smooth {
+        #[arg(help = "Path to the feature hierarchy file (same format as --feature-hierarchy in add-feature-set).", long = "feature-hierarchy", required = true)]
+        hierarchy: PathBuf,
+
+        #[arg(help = "Input TSV file (output of the lookup command). Defaults to stdin.", short, long)]
+        input: Option<PathBuf>,
+
+        #[arg(help = "Output file. Defaults to stdout.", short, long)]
+        output: Option<PathBuf>,
+
+        #[arg(help = "Maximum coordinate gap between adjacent intervals considered connected during smoothing.", long = "max-gap", default_value = "0")]
+        max_gap: u64,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -784,6 +800,31 @@ fn main() {
                     println!("{} {}", names[node], names[tree.parent(node)]);
                 }
             }
+        },
+
+        Subcommands::Smooth { hierarchy, input, output, max_gap } => {
+            let (tree, names) = read_hierarchy_file(&hierarchy, &[]);
+            let root_id = tree.root();
+
+            let input: Box<dyn std::io::Read> = if let Some(ref path) = input {
+                Box::new(File::open(path)
+                    .unwrap_or_else(|e| panic!("Could not open input file {}: {e}", path.display())))
+            } else {
+                Box::new(std::io::stdin())
+            };
+            let output: Box<dyn Write> = if let Some(ref path) = output {
+                Box::new(File::create(path)
+                    .unwrap_or_else(|e| panic!("Could not create output file {}: {e}", path.display())))
+            } else {
+                Box::new(std::io::stdout())
+            };
+
+            let stats = smooth::run_smooth(input, output, &tree, &names, root_id, max_gap);
+            log::info!(
+                "Reads processed: {}, Intervals in: {}, Smoothed: {}, Merged: {}, Intervals out: {}",
+                stats.reads_processed, stats.intervals_in, stats.intervals_smoothed,
+                stats.intervals_merged, stats.intervals_out,
+            );
         },
 
         Subcommands::LookupDebug{query: query_path, index: index_path, labeling_file} => {
