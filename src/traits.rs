@@ -9,6 +9,7 @@ pub trait ColoredKmerLookupAlgorithm {
 }
 
 pub trait ColorStorage {
+    fn len(&self) -> usize;
     fn get_color(&self, colex: usize) -> Option<usize>;
     fn set_color(&mut self, colex: usize, value: Option<usize>);
     fn get_color_of_range(&self, range: Range<usize>, color_hierarchy: &LcaTree) -> Option<usize>;

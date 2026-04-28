@@ -49,6 +49,10 @@ impl MySerialize for SimpleColorStorage {
 
 impl ColorStorage for SimpleColorStorage {
 
+    fn len(&self) -> usize {
+        self.colors.len() / self.bits_per_color
+    }
+
     fn get_color(&self, colex: usize) -> Option<usize> {
         Self::get_color_from_slice(&self.colors, self.bits_per_color, colex)
     }
@@ -74,7 +78,7 @@ impl ColorStorage for SimpleColorStorage {
     }
 
     fn substitute_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize) {
-        let n = self.len(); // Number of elements
+        let n = ColorStorage::len(self);
         let n_bits = n * self.bits_per_color;
         let total_words = n_bits.next_multiple_of(64) / 64;
         let block_size_bits = n_bits.div_ceil(n_threads).next_multiple_of(64*self.bits_per_color);
