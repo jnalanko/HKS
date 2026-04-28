@@ -8,7 +8,7 @@ use sbwt::{BitPackedKmerSortingDisk, BitPackedKmerSortingMem, LcsArray, SbwtInde
 use single_colored_kmers::{ColorHierarchy, Labeling, HksIndex};
 use parallel_queries::OutputWriter;
 
-use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{HksBase, LcsWrapper, SingleColoredKmersShort}, traits::ColoredKmerLookupAlgorithm};
+use crate::{color_storage::SimpleColorStorage, parallel_queries::RunWriter, single_colored_kmers::{HksBase, LcsWrapper, SingleColoredKmersShort}, traits::{ColorStorage, ColoredKmerLookupAlgorithm}};
 
 mod single_colored_kmers;
 mod build;
@@ -353,6 +353,7 @@ fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKCol
 
     let base = HksBase::<LcsWrapper>::load(&mut base_input);
     let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
+    assert!(base.sbwt().n_sets() == labeling.color_assignments.len(), "Mismatched feature set file and base index");
     let index = FixedKColorIndex::from_parts(base, labeling);
     log::info!("Loaded index with s = {}", index.k());
     index
