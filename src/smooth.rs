@@ -334,7 +334,7 @@ pub fn run_smooth(
         if !header_seen {
             if trimmed.starts_with("query_rank") || trimmed.starts_with("query_name") {
                 header_seen = true;
-                uses_names = trimmed.contains("color_name");
+                uses_names = trimmed.contains("label_name");
                 // Pass header through
                 writeln!(writer, "{}", trimmed).expect("write error");
                 continue;
