@@ -2,6 +2,7 @@ use std::{io::{Read, Write}, ops::Range};
 use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8};
 use std::sync::atomic::Ordering::Relaxed;
 
+use crate::color_storage::SimpleColorStorage;
 use crate::lca_tree::LcaTree;
 
 pub trait ColoredKmerLookupAlgorithm {
@@ -32,6 +33,10 @@ pub trait AtomicColorVec{
     fn update<F: Fn(usize, usize) -> Option<usize>>(&self, i: usize, x: usize, hierarchy: &LcaTree, lca_override: &F);
     fn read(&self, i: usize) -> Option<usize>;
     fn none_sentinel() -> usize;        // the value used to represent "no color assigned"
+
+    /// Consumes the atomic vector and bit-packs it into a `SimpleColorStorage` in place,
+    /// reusing the backing allocation. Returns `(storage, n_colored, n_uncolored)`.
+    fn into_color_storage(self, n_colors: usize) -> (SimpleColorStorage, usize, usize);
 }
 
 pub trait AtomicUint {

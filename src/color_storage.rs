@@ -186,7 +186,16 @@ impl SimpleColorStorage {
     }
 
     pub fn required_bit_width(n_colors: usize) -> usize {
-        log2_ceil(n_colors + 1) // +1 is for the special "none" value 
+        log2_ceil(n_colors + 1) // +1 is for the special "none" value
+    }
+
+    /// Wraps an already-packed `BitVec<u64, Lsb0>` into a `SimpleColorStorage`
+    /// without re-allocating or copying. `colors.len()` must equal
+    /// `n_elements * required_bit_width(n_colors)`.
+    pub fn from_packed(colors: BitVec<u64, Lsb0>, n_colors: usize) -> Self {
+        let bits_per_color = Self::required_bit_width(n_colors);
+        assert!(colors.len() % bits_per_color == 0);
+        SimpleColorStorage { n_colors, colors, bits_per_color }
     }
 
     pub fn n_colors(&self) -> usize {
