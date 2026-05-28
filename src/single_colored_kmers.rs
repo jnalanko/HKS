@@ -499,7 +499,7 @@ mod tests {
     use crate::color_storage::SimpleColorStorage;
 
     fn sequential_substitute(colors: &mut SimpleColorStorage, s: usize, hierarchy: &LcaTree, lcs: &LcsWrapper) {
-        let n = colors.len();
+        let n = ColorStorage::len(colors);
         let mut run_start = 0usize;
         for colex in 1..=n {
             let run_continues = colex < n && lcs.get_lcs(colex) >= s;
