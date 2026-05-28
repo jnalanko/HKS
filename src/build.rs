@@ -337,6 +337,10 @@ impl<T: AtomicUint> AtomicColorVec for Atomic64BitAlignedColorBuf<T> {
         let mut colors = BitVec::<u64, Lsb0>::from_vec(buf);
         colors.truncate(total_bits);
 
+        // Zero the dead bits in the last word so the backing storage is a pure
+        // function of the logical contents (matters for byte-identical serialization).
+        colors.set_uninitialized(false);
+
         (SimpleColorStorage::from_packed(colors, n_colors), n_colored, n_uncolored)
     }
 }
