@@ -255,7 +255,7 @@ impl<T: AtomicUint> Atomic64BitAlignedColorBuf<T> {
 
 impl<T: AtomicUint> AtomicColorVec for Atomic64BitAlignedColorBuf<T> {
     fn new(len: usize) -> Self {
-        let bytes = len.saturating_mul(std::mem::size_of::<T>());
+        let bytes = len.checked_mul(std::mem::size_of::<T>()).expect("color buffer size overflow");
         let words = bytes.div_ceil(8);
         // u64::MAX = all-1s, so every sub-word of width sizeof(T) reads as T::max_value(),
         // i.e. the "no color assigned" sentinel.
