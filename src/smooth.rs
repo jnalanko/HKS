@@ -46,8 +46,8 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
             let mut first_unrelated: Option<usize> = None;
 
             // ------------------------------------------------------------------
-            // Ancestor phase: scan rightward accepting intervals whose features
-            // are ancestors of the left anchor's feature (more general).
+            // Ascending phase: scan rightward accepting features that are
+            // ancestors of last_rel_feat (i.e. more general / closer to root).
             // Unrelated features on other branches are skipped but their ancestor
             // paths are added to `disallowed` so we stop if we'd cross into them.
             // ------------------------------------------------------------------
@@ -65,8 +65,8 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
                     break;
                 }
 
-                if tree.is_ancestor(last_rel_feat, nf) {
-                    // nf IS an ancestor of last_rel_feat → more general → extend
+                if tree.is_ancestor(nf, last_rel_feat) {
+                    // nf IS an ancestor of last_rel_feat → nf is more general → extend
                     if disallowed.contains(&nf) {
                         break;
                     }
@@ -75,7 +75,7 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
                     last_rel_idx = j + 1;
                     related.push(j + 1);
                     j += 1;
-                } else if !tree.is_ancestor(nf, last_rel_feat) {
+                } else if !tree.is_ancestor(last_rel_feat, nf) {
                     // Neither is ancestor of the other → different branches
                     disallowed.extend(tree.ancestors(nf));
                     if first_unrelated.is_none() && !was_related[j + 1] {
@@ -91,9 +91,8 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
             let mut window_end = last_rel_idx;
 
             // ------------------------------------------------------------------
-            // Descendant phase: continue rightward from the turning point,
-            // accepting intervals whose features are descendants of the turning
-            // point's feature (more specific).
+            // Descending phase: continue rightward from the peak, accepting
+            // features that are descendants of last_rel_feat (more specific).
             // ------------------------------------------------------------------
             let peak_feat = intervals[window_end].feature;
             let mut k = window_end;
@@ -106,17 +105,17 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
                     break;
                 }
 
-                if tree.is_ancestor(nf, last_rel_feat) {
+                if tree.is_ancestor(last_rel_feat, nf) {
                     // last_rel_feat IS ancestor of nf → nf is more specific → extend
                     last_rel_feat = nf;
                     last_rel_end = intervals[k + 1].end;
                     last_rel_idx = k + 1;
                     related.push(k + 1);
                     k += 1;
-                } else if !tree.is_ancestor(last_rel_feat, nf) {
+                } else if !tree.is_ancestor(nf, last_rel_feat) {
                     // Neither is ancestor → unrelated
-                    if tree.is_ancestor(nf, peak_feat) {
-                        // nf is a descendant of peak → would restart a new window → stop
+                    if tree.is_ancestor(peak_feat, nf) {
+                        // nf is a descendant of peak → would restart a new ascending window → stop
                         break;
                     }
                     if first_unrelated.is_none() && !was_related[k + 1] {
@@ -149,9 +148,9 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
                 let lca = tree.lca(left, right);
                 for w in (window_start + 1)..window_end {
                     let orig = intervals[w].feature;
-                    // is_ancestor(lca, orig) means orig IS an ancestor of lca,
+                    // is_ancestor(orig, lca) means orig IS an ancestor of lca,
                     // i.e. orig is more general than lca → replace with lca
-                    if tree.is_ancestor(lca, orig) && orig != lca {
+                    if tree.is_ancestor(orig, lca) && orig != lca {
                         intervals[w].feature = lca;
                         intervals[w].originally_none = false;
                         changed = true;
@@ -381,4 +380,66 @@ pub fn run_smooth(
 
     writer.flush().expect("flush error");
     stats
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lca_tree::LcaTree;
+
+    /// Build a small tree:   root(3) → A(2) → { B(0), C(1) }
+    fn cousin_tree() -> LcaTree {
+        // Edges: B→A, C→A, A→root
+        LcaTree::new(4, vec![(0, 2), (1, 2), (2, 3)]).unwrap()
+    }
+
+    fn iv(feature: usize, start: u64, end: u64) -> Interval {
+        Interval { query_id: "q".into(), start, end, feature, originally_none: feature == 3 }
+    }
+
+    /// Canonical case: B, root, C  →  B, A, C
+    /// (a too-general interior interval is promoted to LCA of its specific flankers)
+    #[test]
+    fn promotes_general_interior_to_lca() {
+        let tree = cousin_tree();
+        let root = tree.root(); // node 3
+        let a = 2usize;
+        let b = 0usize;
+        let c = 1usize;
+
+        let mut intervals = vec![
+            iv(b, 0, 100),
+            iv(root, 100, 200),
+            iv(c, 200, 300),
+        ];
+
+        let reassigned = smooth_intervals(&mut intervals, &tree, 1000);
+        assert_eq!(reassigned, 1, "expected exactly one reassignment");
+        assert_eq!(intervals[0].feature, b,    "left anchor unchanged");
+        assert_eq!(intervals[1].feature, a,    "interior promoted to LCA(B,C) = A");
+        assert_eq!(intervals[2].feature, c,    "right anchor unchanged");
+    }
+
+    /// Already-at-LCA interior should not be touched.
+    #[test]
+    fn no_change_when_interior_already_at_lca() {
+        let tree = cousin_tree();
+        let a = 2usize;
+        let b = 0usize;
+        let c = 1usize;
+
+        let mut intervals = vec![
+            iv(b, 0, 100),
+            iv(a, 100, 200),
+            iv(c, 200, 300),
+        ];
+
+        let reassigned = smooth_intervals(&mut intervals, &tree, 1000);
+        assert_eq!(reassigned, 0, "nothing to promote when interior is already LCA");
+        assert_eq!(intervals[1].feature, a);
+    }
 }
