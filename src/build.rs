@@ -73,6 +73,8 @@ where
         eprintln!("plca(a,b): {}", plca.plca(DJ_id, PHR_id));
         eprintln!("plca(b,c): {}", plca.plca(PHR_id, nonacrocentric_id));
         eprintln!("plca(plca(a,b), c): {}", plca.plca(plca.plca(DJ_id, PHR_id), nonacrocentric_id));
+        eprintln!("plca(plca(a,c), b): {}", plca.plca(plca.plca(DJ_id, nonacrocentric_id), PHR_id));
+        eprintln!("plca(plca(b,c), a): {}", plca.plca(plca.plca(PHR_id, nonacrocentric_id), DJ_id));
         std::process::exit(0);
     }
 
