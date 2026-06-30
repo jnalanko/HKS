@@ -452,11 +452,11 @@ impl ColoringBatch {
                     assert!(len < k);
                     let colex = range.start;
                     if range.start == 2505094750 {
-                        eprintln!("2505094750 before update: {:?}", color_ids.read(2505094750));
+                        eprintln!("2505094750 before dummy update: {:?}, {:?}", color_ids.read(2505094750), range);
                     }
                     color_ids.update(colex, *color, color_hierarchy, lca_override);
                     if range.start == 2505094750 {
-                        eprintln!("2505094750 after update: {:?}", color_ids.read(2505094750));
+                        eprintln!("2505094750 after dummy update: {:?}, {:?}", color_ids.read(2505094750), range);
                     }
                 });
             }
