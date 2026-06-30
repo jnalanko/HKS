@@ -160,6 +160,11 @@ where
                                 run_range = run_range.start..run_range.start + (k - 1);
                             }
                             let mer = &seq[run_range.clone()];
+                            if mer == b"ACCTACCTCATGTTACTCTTCTTTTGTTTT" {
+                                let left = if run_range.start == 0 {None} else {Some(seq[run_range.start-1])};
+                                let right = if run_range.end == seq.len() {None} else {Some(seq[run_range.end])};
+                                eprintln!("ACCTACCTCATGTTACTCTTCTTTTGTTTT is dummy with context: {:?} {:?}", left, right);
+                            }
                             batch.push_dummy_mer(color, mer);
                         }
                     });
