@@ -156,7 +156,7 @@ where
                 while let Some(seq) = stream.stream_next() {
                     crate::util::for_each_run_with_key(seq, |c| IS_DNA[*c as usize], |mut run_range: Range<usize>| {
                         if !run_range.is_empty() && IS_DNA[seq[run_range.start] as usize] {
-                            if run_range.len() >= k {
+                            if run_range.len() >= k-1 {
                                 run_range = run_range.start..run_range.start + (k - 1);
                             }
                             let mer = &seq[run_range.clone()];
