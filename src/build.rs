@@ -393,6 +393,10 @@ impl ColoringBatch {
         let k = si.k;
         let mut thread_progress = 0_usize;
 
+        log::info!("Computing dummy node marks");
+        let dummy_marks = si.extend_right.compute_dummy_node_marks();
+
+        log::info!("Coloring");
         for (color, db) in self.dbs.iter() {
             for rec in db.iter() {
                 let seq = rec.seq;
@@ -425,6 +429,7 @@ impl ColoringBatch {
                     assert!(range.len() > 0);
                     assert!(len < k);
                     let colex = range.start;
+                    assert!(dummy_marks[colex]); // This must be dummy (otherwise not all dummies are present in the SBWT)
                     color_ids.update(colex, *color, color_hierarchy, lca_override);
                 });
             }
