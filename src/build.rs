@@ -129,6 +129,13 @@ where
     };
     let n_colors = color_hierarchy.n_nodes();
 
+
+    log::info!("Computing dummy node marks");
+    let dummy_marks = si.extend_right.compute_dummy_node_marks();
+    let dummy_marks_ref = &dummy_marks; // To capture by value into a closure
+
+    log::info!("Coloring");
+
     let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
     let n_bases_processed = AtomicU64::new(0);
     std::thread::scope(|scope| { thread_pool.install(|| {
@@ -180,7 +187,7 @@ where
             let color_ids_ref = &color_ids;
             worker_handles.push(scope.spawn(move || {
                 while let Ok(batch) = batch_recv_clone.recv() {
-                    batch.run(si_ref, color_ids_ref, n_bases_processed_ref, color_hierarchy, lca_override);
+                    batch.run(si_ref, color_ids_ref, n_bases_processed_ref, color_hierarchy, lca_override, dummy_marks_ref);
                 }
             }));
         }
@@ -384,7 +391,7 @@ impl ColoringBatch {
         self.total_len += mer.len();
     }
 
-    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, color_hierarchy: &LcaTree, lca_override: &F)
+    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, color_hierarchy: &LcaTree, lca_override: &F, dummy_marks: &BitSlice)
     where
         V: AtomicColorVec,
         CL: ContractLeft,
@@ -393,10 +400,6 @@ impl ColoringBatch {
         let k = si.k;
         let mut thread_progress = 0_usize;
 
-        log::info!("Computing dummy node marks");
-        let dummy_marks = si.extend_right.compute_dummy_node_marks();
-
-        log::info!("Coloring");
         for (color, db) in self.dbs.iter() {
             for rec in db.iter() {
                 let seq = rec.seq;
