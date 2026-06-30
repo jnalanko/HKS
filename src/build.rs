@@ -59,6 +59,21 @@ where
 {
     let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1);
     let tree = hierarchy.tree();
+    
+    { // DEBUG
+
+        let DJ_id = 0;
+        let PHR_id = 2;
+        let nonacrocentric_id = 1;
+
+
+        let plca = PriorityLca::new(tree, priorities.as_ref().unwrap().clone())
+            .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
+
+        eprintln!("plca(a,b): {}", plca.plca(DJ_id, PHR_id));
+        eprintln!("plca(b,c): {}", plca.plca(PHR_id, nonacrocentric_id));
+        eprintln!("plca(plca(a,b), c): {}", plca.plca(plca.plca(DJ_id, PHR_id), nonacrocentric_id));
+    }
 
     log::info!("Marking colors");
     match priorities {
