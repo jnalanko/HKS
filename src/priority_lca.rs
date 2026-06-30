@@ -89,7 +89,6 @@ impl<'a> PriorityLca<'a> {
         let ca = self.ancestors_by_depth[a][self.tree.depth(a) - dl - 1];
         let cb = self.ancestors_by_depth[b][self.tree.depth(b) - dl - 1];
 
-        println!("Sibling priorities: {} {}", self.priority[ca], self.priority[cb]);
         use std::cmp::Ordering::*;
         match self.priority[ca].cmp(&self.priority[cb]) {
             Less    => a,
