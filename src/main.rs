@@ -422,6 +422,8 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
 
     let algo = LookupAlgorithmImpl { index };
 
+    eprintln!("Color of 2505094750: {:?}", index.inner().get_color(2505094750));
+
     log::info!("Running queries from {} ...", args.query.display());
     run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
     Ok(())
