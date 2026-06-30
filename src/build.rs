@@ -77,7 +77,7 @@ where
         eprintln!("plca(plca(a,b), c): {}", plca.plca(plca.plca(DJ_id, PHR_id), nonacrocentric_id));
         eprintln!("plca(plca(a,c), b): {}", plca.plca(plca.plca(DJ_id, nonacrocentric_id), PHR_id));
         eprintln!("plca(plca(b,c), a): {}", plca.plca(plca.plca(PHR_id, nonacrocentric_id), DJ_id));
-        std::process::exit(0);
+        //std::process::exit(0);
     }
 
     log::info!("Marking colors");
@@ -420,7 +420,13 @@ impl ColoringBatch {
                 ms.enumerate().for_each(|(i, (len, range))| {
                     if len == k {
                         debug_assert!(range.len() == 1);
+                        if range.start == 2505094750 {
+                            eprintln!("2505094750 before update: {:?}", color_ids.read(2505094750));
+                        }
                         color_ids.update(range.start, *color, color_hierarchy, lca_override);
+                        if range.start == 2505094750 {
+                            eprintln!("2505094750 after update: {:?}", color_ids.read(2505094750));
+                        }
                     } else if cfg!(debug_assertions) && i >= k - 1 {
                         let kmer = &seq[i - (k - 1)..=i];
                         let all_acgt = kmer.iter().all(|c| IS_DNA[*c as usize]);
@@ -445,7 +451,13 @@ impl ColoringBatch {
                     assert!(range.len() > 0);
                     assert!(len < k);
                     let colex = range.start;
+                    if range.start == 2505094750 {
+                        eprintln!("2505094750 before update: {:?}", color_ids.read(2505094750));
+                    }
                     color_ids.update(colex, *color, color_hierarchy, lca_override);
+                    if range.start == 2505094750 {
+                        eprintln!("2505094750 after update: {:?}", color_ids.read(2505094750));
+                    }
                 });
             }
         }
