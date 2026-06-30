@@ -73,6 +73,7 @@ where
         eprintln!("plca(a,b): {}", plca.plca(DJ_id, PHR_id));
         eprintln!("plca(b,c): {}", plca.plca(PHR_id, nonacrocentric_id));
         eprintln!("plca(plca(a,b), c): {}", plca.plca(plca.plca(DJ_id, PHR_id), nonacrocentric_id));
+        std::process::exit(0);
     }
 
     log::info!("Marking colors");
