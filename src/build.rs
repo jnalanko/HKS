@@ -428,7 +428,9 @@ impl ColoringBatch {
             for rec in db.iter() {
                 let mer = rec.seq;
                 let ms = si.matching_statistics_iter(mer);
+                eprintln!("Processing dummy {}", String::from_utf8_lossy(mer));
                 ms.for_each(|(len, range)| {
+                    dbg!(&len, &range);
                     assert!(range.len() > 0);
                     assert!(len < k);
                     let colex = range.start;
