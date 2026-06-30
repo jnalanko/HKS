@@ -59,6 +59,8 @@ where
 {
     let required_bit_width = SimpleColorStorage::required_bit_width(hierarchy.n_nodes() + 1);
     let tree = hierarchy.tree();
+
+    dbg!(base.sbwt().search(b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAG"));
     
     { // DEBUG
 
