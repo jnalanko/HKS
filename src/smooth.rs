@@ -15,7 +15,6 @@ use crate::lca_tree::LcaTree;
 
 #[derive(Clone)]
 pub struct Interval {
-    pub query_id: String,
     pub start: u64,
     pub end: u64,
     pub feature: usize,     // node ID in the hierarchy
@@ -272,6 +271,7 @@ fn format_feature(
 
 /// Flush a completed query: smooth → merge → write.
 fn flush_query(
+    query_id: &str,
     buf: &mut Vec<Interval>,
     tree: &LcaTree,
     names: &[String],
@@ -288,7 +288,7 @@ fn flush_query(
 
     for iv in &merged {
         let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
-        writeln!(writer, "{}\t{}\t{}\t{}", iv.query_id, iv.start, iv.end, feat_str)
+        writeln!(writer, "{}\t{}\t{}\t{}", query_id, iv.start, iv.end, feat_str)
             .expect("write error");
     }
 
@@ -343,7 +343,7 @@ pub fn run_smooth(
         }
 
         let mut cols = trimmed.splitn(4, '\t');
-        let query_id = cols.next().expect("missing query column").to_string();
+        let query_id = cols.next().expect("missing query column");
         let start: u64 = cols.next()
             .and_then(|s| s.parse().ok())
             .expect("bad start coordinate");
@@ -358,24 +358,18 @@ pub fn run_smooth(
         if query_id != current_query {
             if !buf.is_empty() {
                 log::info!("Smoothing {}", current_query);
-                flush_query(&mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
+                flush_query(&current_query, &mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
             }
-            current_query = query_id.clone();
+            current_query = query_id.to_string();
         }
 
-        buf.push(Interval {
-            query_id,
-            start,
-            end,
-            feature,
-            originally_none,
-        });
+        buf.push(Interval { start, end, feature, originally_none });
     }
 
     // Flush final query
     if !buf.is_empty() {
         log::info!("Smoothing {}", current_query);
-        flush_query(&mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
+        flush_query(&current_query, &mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
     }
 
     writer.flush().expect("flush error");
@@ -398,7 +392,7 @@ mod tests {
     }
 
     fn iv(feature: usize, start: u64, end: u64) -> Interval {
-        Interval { query_id: "q".into(), start, end, feature, originally_none: feature == 3 }
+        Interval { start, end, feature, originally_none: feature == 3 }
     }
 
     /// Canonical case: B, root, C  →  B, A, C
