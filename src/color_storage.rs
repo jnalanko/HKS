@@ -49,6 +49,10 @@ impl MySerialize for SimpleColorStorage {
 
 impl ColorStorage for SimpleColorStorage {
 
+    fn len(&self) -> usize {
+        self.colors.len() / self.bits_per_color
+    }
+
     fn get_color(&self, colex: usize) -> Option<usize> {
         Self::get_color_from_slice(&self.colors, self.bits_per_color, colex)
     }
@@ -74,7 +78,7 @@ impl ColorStorage for SimpleColorStorage {
     }
 
     fn substitute_lca_for_s_mer_ranges<L: LcsAccess + Send + Sync>(&mut self, s: usize, hierarchy: &LcaTree, lcs: &L, n_threads: usize) {
-        let n = self.len(); // Number of elements
+        let n = ColorStorage::len(self);
         let n_bits = n * self.bits_per_color;
         let total_words = n_bits.next_multiple_of(64) / 64;
         let block_size_bits = n_bits.div_ceil(n_threads).next_multiple_of(64*self.bits_per_color);
@@ -182,7 +186,16 @@ impl SimpleColorStorage {
     }
 
     pub fn required_bit_width(n_colors: usize) -> usize {
-        log2_ceil(n_colors + 1) // +1 is for the special "none" value 
+        log2_ceil(n_colors + 1) // +1 is for the special "none" value
+    }
+
+    /// Wraps an already-packed `BitVec<u64, Lsb0>` into a `SimpleColorStorage`
+    /// without re-allocating or copying. `colors.len()` must equal
+    /// `n_elements * required_bit_width(n_colors)`.
+    pub fn from_packed(colors: BitVec<u64, Lsb0>, n_colors: usize) -> Self {
+        let bits_per_color = Self::required_bit_width(n_colors);
+        assert!(colors.len() % bits_per_color == 0);
+        SimpleColorStorage { n_colors, colors, bits_per_color }
     }
 
     pub fn n_colors(&self) -> usize {

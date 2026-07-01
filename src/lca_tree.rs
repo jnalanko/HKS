@@ -111,6 +111,23 @@ impl LcaTree {
         self.parent[node]
     }
 
+    /// Returns the depth of `node` (root has depth 0).
+    #[inline]
+    pub fn depth(&self, node: usize) -> usize {
+        self.lca_support.depth(node)
+    }
+
+    /// Returns true if `ancestor` is an ancestor of `node` (including `node` itself).
+    #[inline]
+    pub fn is_ancestor(&self, ancestor: usize, node: usize) -> bool {
+        self.lca(ancestor, node) == ancestor
+    }
+
+    /// Returns an iterator over all ancestors of `node`, from `node` itself up to and including the root.
+    pub fn ancestors(&self, node: usize) -> impl Iterator<Item = usize> + '_ {
+        AncestorIter { tree: self, current: node, done: false }
+    }
+
     // --- Serialization ---
 
     /// Write the tree to `w` in a simple binary format:
@@ -131,6 +148,29 @@ impl LcaTree {
         let parent = read_usize_vec(r)?;
         let lca_support = LcaSupport::load(r)?;
         Ok(LcaTree { n, root, parent, lca_support })
+    }
+}
+
+struct AncestorIter<'a> {
+    tree: &'a LcaTree,
+    current: usize,
+    done: bool,
+}
+
+impl Iterator for AncestorIter<'_> {
+    type Item = usize;
+    fn next(&mut self) -> Option<usize> {
+        if self.done {
+            return None;
+        }
+        let node = self.current;
+        let parent = self.tree.parent[node];
+        if parent == node {
+            self.done = true;
+        } else {
+            self.current = parent;
+        }
+        Some(node)
     }
 }
 

@@ -343,7 +343,17 @@ mod tests {
     use rand_chacha::rand_core::{RngCore, SeedableRng};
     use sbwt::{BitPackedKmerSortingMem, SeqStream};
 
-    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, LcsWrapper, SingleColoredKmers}};
+    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling, LcsWrapper}, traits::ColoredKmerLookupAlgorithm};
+
+    struct HksIndexLookup<'a> {
+        index: &'a HksIndex<LcsWrapper, SimpleColorStorage>,
+    }
+
+    impl<'a> ColoredKmerLookupAlgorithm for HksIndexLookup<'a> {
+        fn lookup_kmers(&self, query: &[u8], k: usize) -> impl Iterator<Item = Option<usize>> {
+            self.index.lookup_kmers(query, k)
+        }
+    }
 
     struct SingleSeqStream {
         seq: Vec<u8>,
@@ -453,8 +463,10 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names));
-        eprintln!("SingleColoredKmers built");
+        let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None, true);
+        let sck = HksIndex::from_parts(base, labeling);
+        eprintln!("HksIndex built");
 
         // Generate 1000 random queries of lengths between 1 and 100
         let mut queries: Vec<Vec<u8>> = Vec::new();
@@ -481,13 +493,14 @@ mod tests {
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
         let mut writer = OutputWriter::new(out, None, None, false, true);
-        lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck, batch_size, k, &mut writer);
+        let sck_lookup = HksIndexLookup { index: &sck };
+        lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck_lookup, batch_size, k, &mut writer);
 
         // Parse output tsv line by line
         let output_str = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         let output_lines = output_str.lines();
         // For each query, the starting positions and colors of found k-mers
-        let mut found_kmers: Vec::<Vec::<(usize,Color)>> = vec![Vec::new(); queries.len()]; 
+        let mut found_kmers: Vec::<Vec::<(usize,Color)>> = vec![Vec::new(); queries.len()];
         for (line_idx, line) in output_lines.enumerate() {
             if line_idx == 0 { // tsv header
                 assert_eq!(line, "query_rank\tfrom_kmer\tto_kmer\tlabel");
@@ -498,7 +511,7 @@ mod tests {
                 let end: usize = fields.next().unwrap().parse().unwrap();
                 let color_token = fields.next().unwrap();
                 let c = color_token.parse::<usize>().unwrap();
-                let color = if c == sck.color_hierarchy().root() { Color::Root } else { Color::NonRoot(c) };
+                let color = if c == sck.labeling().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
                 for i in start..end {
                     found_kmers[seq_id].push((i, color));
                 }
@@ -577,8 +590,10 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter().map(|s| SingleSeqStream::new(s.clone())).collect();
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
-        let sck = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(sbwt, lcs, seqstreams, 3, ColorHierarchy::new_star(color_names));
-        eprintln!("SingleColoredKmers built");
+        let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None, true);
+        let sck = HksIndex::from_parts(base, labeling);
+        eprintln!("HksIndex built");
 
         // Generate random queries of lengths between 1 and 50
         let n_queries = 1000;
@@ -595,7 +610,8 @@ mod tests {
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
         let mut writer = OutputWriter::new(out, None, None, false, true);
-        lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck, batch_size, query_k, &mut writer);
+        let sck_lookup = HksIndexLookup { index: &sck };
+        lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck_lookup, batch_size, query_k, &mut writer);
 
         let output_str = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         let output_lines = output_str.lines();
@@ -610,7 +626,7 @@ mod tests {
                 let end: usize = fields.next().unwrap().parse().unwrap();
                 let color_token = fields.next().unwrap();
                 let c = color_token.parse::<usize>().unwrap();
-                let color = if c == sck.color_hierarchy().root() { Color::Root } else { Color::NonRoot(c) };
+                let color = if c == sck.labeling().hierarchy.tree().root() { Color::Root } else { Color::NonRoot(c) };
                 for i in start..end {
                     found_kmers[seq_id].push((i, color));
                 }
@@ -658,22 +674,27 @@ mod tests {
         let seqstreams: Vec<SingleSeqStream> = sequences.iter()
             .map(|s| SingleSeqStream::new(s.clone()))
             .collect();
-        let original = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::new(
-            sbwt, lcs, seqstreams, 1, ColorHierarchy::new_star(color_names),
-        );
 
-        // Serialize
-        let mut buf = Vec::<u8>::new();
-        original.serialize(&mut buf);
+        let original_base = HksBase::new(sbwt, LcsWrapper::from(lcs));
+        let original_labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&original_base, seqstreams, 3,  ColorHierarchy::new_star(color_names), "unnamed", None, true);
+        let original = HksIndex::from_parts(original_base.clone(), original_labeling.clone());
+
+        // Serialize base index and feature set to separate buffers
+        let mut base_buf = Vec::<u8>::new();
+        original_base.serialize(&mut base_buf);
+        let mut fs_buf = Vec::<u8>::new();
+        original_labeling.serialize_to_file(&mut fs_buf);
 
         // Deserialize
-        let loaded = SingleColoredKmers::<LcsWrapper, SimpleColorStorage>::load(&mut buf.as_slice());
+        let base = HksBase::load(&mut base_buf.as_slice());
+        let feature_set = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_buf.as_slice());
+        let loaded = HksIndex::<LcsWrapper, SimpleColorStorage>::from_parts(base, feature_set);
 
         // Check structural equality
         assert_eq!(original.k(), loaded.k());
         assert_eq!(original.n_kmers(), loaded.n_kmers());
-        assert_eq!(original.color_names(), loaded.color_names());
-        assert_eq!(original.color_hierarchy(), loaded.color_hierarchy());
+        assert_eq!(original.labeling().hierarchy.names(), loaded.labeling().hierarchy.names());
+        assert_eq!(original.labeling().hierarchy.tree(), loaded.labeling().hierarchy.tree());
 
         // Check every SBWT position has the same color
         for i in 0..original.n_kmers() {

@@ -25,19 +25,27 @@ The binary is `target/release/hks`.
 
 ### Build an index
 
-The input to indexing is the maximum k-mer length s, and a file listing one input FASTA/FASTQ path per line, one file per label. Both DNA strands are indexed. By default, the labels are the file paths of the input FASTA/FASTQ files. 
+Index construction happens in two phases: first build the base k-mer index, then add a feature set labeling on top of it.
 
 The `example/` directory contains a tiny example dataset with four files A.fna, B.fna, C.fna, D.fna. To index it, run:
 
 ```bash
-hks build \
+# Phase 1: build the base index (all input k-mers, both strands)
+hks build-base \
   -s 10 \
-  --label-by-file example/file_of_files.txt \
-  --hierarchy example/hierarchy.txt \
-  --output index.hks
+  --input-file-list example/file_of_files.txt \
+  -o base.hksb
+
+# Phase 2: add the feature set labeling
+hks add-feature-set \
+  -i base.hksb \
+  -o features.hksf \
+  --feature-file-list example/file_of_files.txt \
+  --feature-hierarchy example/hierarchy.txt \
+  --feature-set-name my_features
 ```
 
-This indexes the data with the following label hierarchy.
+This creates two files: `base.hksb` (the base k-mer index) and `features.hksf` (the labeling of k-mers with the following hierarchy):
 
 ```
         root
@@ -49,33 +57,53 @@ This indexes the data with the following label hierarchy.
 A.fna  B.fna
 ```
 
-The full build options are as follows:
+The full options for each phase are as follows:
 
 ```
-Usage: hks build [OPTIONS] -s <S> --output <OUTPUT>
+Usage: hks build-base [OPTIONS] -s <S> --output <OUTPUT>
 
 Options:
   -s <S>                            Maximum query length, up to 256. Warning: using a large value of s takes a lot of memory or disk during construction. [default: 31]
-  -o, --output <OUTPUT>             Output filename
+  -o, --output <OUTPUT>             Output filename. Recommended file extension: .hksb
       --external-memory <TEMP_DIR>  Run in external memory construction mode using the given directory as temporary working space. This reduces the RAM peak but is slower. The resulting index will still be exactly the same.
       --forward-only                Do not add reverse complemented k-mers
   -t, --n-threads <N_THREADS>       Number of parallel threads [default: 4]
+      --mem-gigas <MEM_GIGAS>       RAM budget for SBWT construction in gigabytes. [default: 8]
   -h, --help                        Print help
 
 Input:
-      --label-by-file <LABEL_BY_FILE>  A file with one fasta/fastq filename per line, one per label
-      --label-by-seq <LABEL_BY_SEQ>    Give input as a single FASTA file, one sequence per label
-  -u, --unitigs <UNITIGS>              Optional: a fasta/fastq file containing the unitigs of all the k-mers in the input files. More generally, any sequence file with same k-mers will do (unitigs, matchtigs, eulertigs...). This speeds up construction and reduces the RAM and disk usage
-      --labels <LABELS>                Optional: a file with one label name per line, in the same order as the input files. Defaults to using the input filenames as labels. The label "none" is reserved and cannot be used.
-      --hierarchy <HIERARCHY>          Optional: a file describing the label hierarchy tree. Defaults to a star (all labels as children of a single root, named "root").
+      --input <INPUT>               Input fasta/fastq file. For multiple input files, see --input-file-list.
+      --input-file-list <INPUT_FILE_LIST>
+                                    A file with one input fasta/fastq filename per line.
 
 Advanced use:
-      --load-sbwt <SBWT_PATH>
-          Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
-      --load-lcs <LCS_PATH>
-          Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
-      --save-sbwt-and-lcs <SBWT_AND_LCS_SAVE_PREFIX>
-          Optional: save the SBWT and LCS arrays to the given path prefix (writes <prefix>.sbwt and <prefix>.lcs).
+      --load-sbwt <SBWT_PATH>  Optional: a precomputed Bit Matrix SBWT file of the input k-mers. Must have been built with --add-all-dummy-paths
+      --load-lcs <LCS_PATH>    Optional: a precomputed LCS file of the optional SBWT file. Must have been built with --add-all-dummy-paths
+```
+
+```
+Usage: hks add-feature-set [OPTIONS] --index <INDEX> --output <OUTPUT> --feature-set-name <LABELING_NAME>
+
+Options:
+  -i, --index <INDEX>          Path to the existing base index file
+  -o, --output <OUTPUT>        Output filename for the new feature set file
+      --forward-only           Do not add reverse complemented k-mers
+  -t, --n-threads <N_THREADS>  Number of parallel threads [default: 4]
+  -h, --help                   Print help
+
+Features:
+      --feature-file-list <LABEL_BY_FILE>
+          A file with one fasta/fastq filename per line, one per feature. All k-mers in these files must already be present in the index.
+      --feature-per-seq-file <LABEL_BY_SEQ>
+          Give input as a single FASTA file, one sequence per feature. All k-mers in this file must already be present in the index.
+      --feature-names <LABELS>
+          Optional: a file with one feature name per line, in the same order as the input files/sequences. Defaults to using the input filenames or sequence names as features. The feature name "none" is reserved.
+      --feature-hierarchy <HIERARCHY>
+          Optional: a file describing the feature hierarchy tree. Defaults to a star (all features as children of a single root, named "root").
+      --feature-set-name <LABELING_NAME>
+          Name for the new feature set.
+      --feature-priorities <NODE_PRIORITIES>
+          Optional: a file assigning an integer priority to every node in the feature hierarchy (one "<name> <priority>" pair per line, whitespace-separated). Lower value = higher priority. Enables priority-aware LCA during construction. Nodes absent from the file default to priority 0.
 ```
 
 ### Query k-mers
@@ -85,7 +113,8 @@ To query the index built above with k-mer length 5 and the input file `example/q
 ```bash
 hks lookup \
     -q example/query.fasta \
-    -i index.hks \
+    -i base.hksb \
+    --feature-set-file features.hksf \
     -k 5 \
     --report-query-names \
     --report-misses
@@ -117,17 +146,29 @@ This means that k-mers `[0,1)` map to clade1, kmers `[1,3)` to A.fasta, kmers `[
 The full query options are as follows:
 
 ```
-Usage: hks lookup [OPTIONS] --query <QUERY> --index <INDEX>
+Usage: hks lookup [OPTIONS] --index <INDEX> --query <QUERY>
 
 Options:
-  -q, --query <QUERY>          A fasta/fastq query file
-  -i, --index <INDEX>          Path to the index file
-  -t, --n-threads <N_THREADS>  Number of parallel threads [default: 4]
-  -k <K>                       Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.
-      --report-query-names     Print query names instead of query rank integers.
-      --report-misses          Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.
-      --no-header              Do not print the header line.
-  -h, --help                   Print help
+  -i, --index <INDEX>
+          Path to the base index file
+      --feature-set-file <LABELING_FILE>
+          Path to the feature set file. Defaults to the base index path with extension .hksf.
+  -k <K>
+          Query k-mer length. Must be less or equal to the value of s used in index construction. If not given, defaults to the same k as during index construction.
+  -t, --n-threads <N_THREADS>
+          Number of parallel threads [default: 4]
+  -q, --query <QUERY>
+          A fasta/fastq query file
+      --report-query-names
+          Print query names instead of query rank integers.
+      --report-misses
+          Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.
+      --no-header
+          Do not print the header line.
+  -o, --output <OUTPUT>
+          Output file. Defaults to stdout.
+  -h, --help
+          Print help
 
 Advanced:
       --batch-size <BATCH_SIZE>  Number of bases processed per batch in parallel query execution. Increasing this value increases RAM usage but may improve query time and/or parallelism. [default: 1000000]
@@ -136,7 +177,7 @@ Advanced:
 
 ### Hierarchy file format
 
-By default, HKS uses a star topology: all labels are children of a single root node. The `--hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child label> <parent label>` (whitespace-separated). Every label provided to the build command with `--labels` must appear in at least one edge. There can also be labels that were not provided with `--labels`.
+By default, HKS uses a star topology: all features are children of a single root node. The `--feature-hierarchy` flag lets you supply a custom tree. The file is an edge list: one edge per line, each line is `<child feature> <parent feature>` (whitespace-separated). Every feature provided to the build command with `--feature-names` must appear in at least one edge.
 
 See `example/hierarchy.txt` for an example.
 

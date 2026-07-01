@@ -3,7 +3,7 @@ use std::{ops::Range, path::Path};
 use jseqio::reader::DynamicFastXReader;
 
 use crate::color_storage::SimpleColorStorage;
-use crate::single_colored_kmers::SingleColoredKmers;
+use crate::single_colored_kmers::HksIndex;
 use crate::traits::*;
 
 fn print_run(seq_id: usize, run_color: Option<usize>, range: Range<usize>, root_id: usize) {
@@ -17,12 +17,12 @@ fn print_run(seq_id: usize, run_color: Option<usize>, range: Range<usize>, root_
     }
 }
 
-pub fn lookup_single_threaded<L,C>(query_path: &Path, index: &SingleColoredKmers<L,C>, k: usize)
+pub fn lookup_single_threaded<L,C>(query_path: &Path, index: &HksIndex<L,C>, k: usize)
 where L: sbwt::ContractLeft + Clone + MySerialize + From<sbwt::LcsArray> + LcsAccess,
       C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>
 {
 
-    let root_id = index.color_hierarchy().root();
+    let root_id = index.labeling().hierarchy.tree().root();
     let mut reader = DynamicFastXReader::from_file(&query_path)
         .unwrap_or_else(|e| panic!("Could not open query file {}: {e}", query_path.display()));
     let mut seq_id = 0_usize;
