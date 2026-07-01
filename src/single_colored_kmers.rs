@@ -13,7 +13,7 @@ const BASE_FILE_MAGIC: [u8; 8] = *b"hksba0.1";
 const BASE_FILE_VERSION: u32 = 1;
 
 const LABELING_FILE_MAGIC: [u8; 8] = *b"hksfs0.1";
-const LABELING_FILE_VERSION: u32 = 1;
+const LABELING_FILE_VERSION: u32 = 2;
 
 
 #[derive(Debug, Clone)]
@@ -378,6 +378,7 @@ pub struct Labeling<C: ColorStorage + Clone + MySerialize + From<SimpleColorStor
     pub color_assignments: C, // Map colex -> color id (integer)
     pub hierarchy: ColorHierarchy, // Color hierarchy for the color ids in color_assignments
     pub name: String, // Name of the feature set
+    pub variable_k_support: bool, // Whether --variable-k-support was used during indexing (enables queries with k < s)
 }
 
 impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Labeling<C> {
@@ -387,6 +388,8 @@ impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Labeling<
 
         bincode::serialize_into(&mut *out, &(self.name.as_bytes().len() as u64)).unwrap();
         out.write_all(self.name.as_bytes()).unwrap();
+
+        out.write_all(&[self.variable_k_support as u8]).unwrap();
     }
 
     fn load(input: &mut impl Read) -> Self {
@@ -398,7 +401,11 @@ impl<C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> Labeling<
         input.read_exact(&mut name_bytes).unwrap();
         let name = String::from_utf8(name_bytes).unwrap();
 
-        Self { color_assignments, hierarchy, name }
+        let mut variable_k_support_byte = [0_u8; 1];
+        input.read_exact(&mut variable_k_support_byte).unwrap();
+        let variable_k_support = variable_k_support_byte[0] != 0;
+
+        Self { color_assignments, hierarchy, name, variable_k_support }
     }
 
     pub fn serialize_to_file(&self, mut out: &mut impl Write) {
@@ -441,9 +448,13 @@ pub struct SingleColoredKmersShort<L: ContractLeft + Clone + MySerialize + From<
 impl<L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync + Send, C: ColorStorage + Clone + MySerialize + From<SimpleColorStorage>> SingleColoredKmersShort<L,C> {
 
     pub fn new(mut index: HksIndex<L, C>, k: usize, n_threads: usize) -> Self {
-        assert!(k <= index.k());
-        if k < index.k() {
+        let s = index.k();
+        assert!(k <= s);
+        if k < s {
             let fs = &mut index.labeling;
+            if !fs.variable_k_support {
+                panic!("Error: querying with k = {} < s = {} requires that the feature set '{}' was built with --variable-k-support, but it was not.", k, s, fs.name);
+            }
             log::info!("Preprocessing colors for {}-mer queries for labeling: {}", k, fs.name);
             fs.color_assignments.substitute_lca_for_s_mer_ranges(k, fs.hierarchy.tree(), &index.base.lcs, n_threads);
         }

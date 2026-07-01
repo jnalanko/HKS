@@ -40,7 +40,7 @@ where
 
     log::info!("Indexing color id array");
     let color_assignments = C::from(color_storage);
-    Labeling { color_assignments, hierarchy, name: labeling_name.to_owned() }
+    Labeling { color_assignments, hierarchy, name: labeling_name.to_owned(), variable_k_support }
 }
 
 /// Resolve priorities (or absence thereof) into a merge closure and run
