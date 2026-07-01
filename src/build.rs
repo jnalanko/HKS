@@ -27,6 +27,7 @@ pub fn build_labeling<L, C, T>(
     hierarchy: ColorHierarchy,
     labeling_name: &str,
     priorities: Option<Vec<usize>>,
+    variable_k_support: bool,
 ) -> Labeling<C>
 where
     L: ContractLeft + Clone + MySerialize + From<LcsArray> + LcsAccess + Sync,
@@ -34,7 +35,7 @@ where
     T: SeqStream + Send,
 {
     let color_storage = mark_colors_with_priorities::<T, C, L>(
-        base, input_streams, n_threads, &hierarchy, priorities,
+        base, input_streams, n_threads, &hierarchy, priorities, variable_k_support
     );
 
     log::info!("Indexing color id array");
@@ -51,6 +52,7 @@ fn mark_colors_with_priorities<T, C, L>(
     n_threads: usize,
     hierarchy: &ColorHierarchy,
     priorities: Option<Vec<usize>>,
+    variable_k_support: bool,
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
@@ -66,11 +68,11 @@ where
             let plca = PriorityLca::new(tree, p)
                 .unwrap_or_else(|e| panic!("Invalid node priorities: {e}"));
             let plca_override = |a,b| Some(plca.plca(a, b));
-            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &plca_override)
+            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &plca_override, variable_k_support)
         }
         None => {
             let no_override = |_: usize, _: usize| None;
-            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &no_override)
+            mark_colors_dispatch::<T, L, _>(base, input_streams, n_threads, required_bit_width, tree, &no_override, variable_k_support)
         }
     }
 }
@@ -87,6 +89,7 @@ fn mark_colors_dispatch<T, L, F>(
     required_bit_width: usize,
     color_hierarchy: &LcaTree,
     lca_override: &F,
+    variable_k_support: bool,
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
@@ -94,13 +97,13 @@ where
     F: Fn(usize, usize) -> Option<usize> + Sync,
 {
     if required_bit_width <= 8 {
-        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU8>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU8>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override, variable_k_support)
     } else if required_bit_width <= 16 {
-        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU16>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU16>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override, variable_k_support)
     } else if required_bit_width <= 32 {
-        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU32>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU32>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override, variable_k_support)
     } else {
-        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU64>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override)
+        mark_colors::<T, Atomic64BitAlignedColorBuf<AtomicU64>, L, F>(base, input_streams, n_threads, color_hierarchy, lca_override, variable_k_support)
     }
 }
 
@@ -110,6 +113,7 @@ fn mark_colors<T, A, L, F>(
     n_threads: usize,
     color_hierarchy: &LcaTree,
     lca_override: &F,
+    variable_k_support: bool,
 ) -> SimpleColorStorage
 where
     T: SeqStream + Send,
@@ -130,9 +134,15 @@ where
     let n_colors = color_hierarchy.n_nodes();
 
 
-    log::info!("Computing dummy node marks");
-    let dummy_marks = si.extend_right.compute_dummy_node_marks();
-    let dummy_marks_ref = &dummy_marks; // To capture by value into a closure
+    let dummy_marks = if variable_k_support {
+        log::info!("Computing dummy node marks");
+        Some(si.extend_right.compute_dummy_node_marks())
+    } else {
+        log::info!("Building for fixed order -> no dummy marks required");
+        None
+    };
+
+    let dummy_marks_ref = &dummy_marks; // To capture by reference
 
     log::info!("Coloring");
 
@@ -154,15 +164,17 @@ where
             let k = sbwt.k();
             for (color, mut stream) in input_streams.into_iter().enumerate() {
                 while let Some(seq) = stream.stream_next() {
-                    crate::util::for_each_run_with_key(seq, |c| IS_DNA[*c as usize], |mut run_range: Range<usize>| {
-                        if !run_range.is_empty() && IS_DNA[seq[run_range.start] as usize] {
-                            if run_range.len() >= k-1 {
-                                run_range = run_range.start..run_range.start + (k - 1);
+                    if variable_k_support {
+                        crate::util::for_each_run_with_key(seq, |c| IS_DNA[*c as usize], |mut run_range: Range<usize>| {
+                            if !run_range.is_empty() && IS_DNA[seq[run_range.start] as usize] {
+                                if run_range.len() >= k-1 {
+                                    run_range = run_range.start..run_range.start + (k - 1);
+                                }
+                                let mer = &seq[run_range.clone()];
+                                batch.push_dummy_mer(color, mer);
                             }
-                            let mer = &seq[run_range.clone()];
-                            batch.push_dummy_mer(color, mer);
-                        }
-                    });
+                        });
+                    }
 
                     crate::util::process_kmers_in_pieces(seq, k, b, |_piece_idx, piece: &[u8]| {
                         batch.push(color, piece);
@@ -391,7 +403,9 @@ impl ColoringBatch {
         self.total_len += mer.len();
     }
 
-    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, color_hierarchy: &LcaTree, lca_override: &F, dummy_marks: &BitSlice)
+    // If dummy marks is Some(...), also colors dummies (required for variable-order indexing).
+    // This requires that the SBWT has a dummy for each prefix of length up to k-1 in each DNA run in the input sequences.
+    fn run<V, CL, F>(&self, si: &StreamingIndex<'_, SbwtIndex<SubsetMatrix>, CL>, color_ids: &V, progress_counter: &AtomicU64, color_hierarchy: &LcaTree, lca_override: &F, dummy_marks: &Option<BitVec>)
     where
         V: AtomicColorVec,
         CL: ContractLeft,
@@ -424,18 +438,22 @@ impl ColoringBatch {
             }
         }
 
-        for (color, db) in self.dummy_mer_dbs.iter() {
-            for rec in db.iter() {
-                let mer = rec.seq;
-                let ms = si.matching_statistics_iter(mer);
-                ms.for_each(|(len, range)| {
-                    assert!(range.len() > 0);
-                    assert!(len < k);
-                    let colex = range.start;
-                    assert!(dummy_marks[colex]); // This must be dummy (otherwise not all dummies are present in the SBWT)
-                    color_ids.update(colex, *color, color_hierarchy, lca_override);
-                });
+        if dummy_marks.is_some() {
+            let dummy_marks = dummy_marks.as_ref().unwrap();
+            for (color, db) in self.dummy_mer_dbs.iter() {
+                for rec in db.iter() {
+                    let mer = rec.seq;
+                    let ms = si.matching_statistics_iter(mer);
+                    ms.for_each(|(len, range)| {
+                        assert!(range.len() > 0);
+                        assert!(len < k);
+                        let colex = range.start;
+                        assert!(dummy_marks[colex]); // This must be dummy (otherwise not all dummies are present in the SBWT)
+                        color_ids.update(colex, *color, color_hierarchy, lca_override);
+                    });
+                }
             }
+
         }
 
         progress_counter.fetch_add(thread_progress as u64, std::sync::atomic::Ordering::Relaxed);

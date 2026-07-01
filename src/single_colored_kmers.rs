@@ -534,7 +534,7 @@ mod tests {
             .collect();
 
         let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
-        let labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&base, streams, 1, hierarchy, "labeling_name", None);
+        let labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&base, streams, 1, hierarchy, "labeling_name", None, false);
         let index = HksIndex::from_parts(base, labeling);
 
         // Sequential reference: run the simple single-threaded loop

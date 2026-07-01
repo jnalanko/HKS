@@ -464,7 +464,7 @@ mod tests {
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
         let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
-        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None, true);
         let sck = HksIndex::from_parts(base, labeling);
         eprintln!("HksIndex built");
 
@@ -591,7 +591,7 @@ mod tests {
         eprintln!("Building SingleColoredKmers...");
         let color_names: Vec<String> = (0..sequences.len()).map(|i| format!("{}", i)).collect();
         let base = HksBase::new(sbwt, LcsWrapper::from(lcs));
-        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None);
+        let labeling = crate::build::build_labeling(&base, seqstreams, 3, ColorHierarchy::new_star(color_names), "unnamed", None, true);
         let sck = HksIndex::from_parts(base, labeling);
         eprintln!("HksIndex built");
 
@@ -676,7 +676,7 @@ mod tests {
             .collect();
 
         let original_base = HksBase::new(sbwt, LcsWrapper::from(lcs));
-        let original_labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&original_base, seqstreams, 3,  ColorHierarchy::new_star(color_names), "unnamed", None);
+        let original_labeling: Labeling<SimpleColorStorage> = crate::build::build_labeling(&original_base, seqstreams, 3,  ColorHierarchy::new_star(color_names), "unnamed", None, true);
         let original = HksIndex::from_parts(original_base.clone(), original_labeling.clone());
 
         // Serialize base index and feature set to separate buffers

@@ -104,6 +104,10 @@ pub enum Subcommands {
         #[arg(help = "Do not add reverse complemented k-mers", long = "forward-only")]
         forward_only: bool,
 
+        // The reason why this conflicts with node priorities is that we only use priorities during build time to keep the query streamlined.
+        #[arg(help = "Enable support for all k-mer lengths with k <= s in queries. Can not be used if feature priorities are given (--feature-priorities). This option requires that the base index has a dummy node representative for each prefix of the start of a sequence, otherwise the construction will crash with an error. Only use this if you are sure you know what you are doing.", long = "variable-k-support", conflicts_with = "node_priorities")]
+        variable_k_support: bool,
+
         #[arg(help = "Number of parallel threads", short = 't', long = "n-threads", default_value = "4", value_parser = clap::value_parser!(u64).range(1..))]
         n_threads: u64,
     },
@@ -693,7 +697,7 @@ fn main() {
             base.serialize(&mut output_writer);
         },
 
-        Subcommands::AddFeatureSet { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads } => {
+        Subcommands::AddFeatureSet { index: index_path, output: labeling_out_path, label_by_file, label_by_seq, labels: label_names_file, hierarchy: hierarchy_path, labeling_name, node_priorities: node_priorities_path, forward_only, n_threads, variable_k_support } => {
             if label_by_file.is_none() && label_by_seq.is_none() {
                 panic!("Error: one of --feature-file-list or --feature-per-seq-file is required");
             }
@@ -709,11 +713,11 @@ fn main() {
             let labeling: Labeling<SimpleColorStorage> = if let Some(fof) = label_by_file {
                 let (hierarchy, individual_streams) = get_coloring_input_for_file_mode(&fof, label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
+                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities, variable_k_support)
             } else {
                 let (hierarchy, individual_streams) = get_coloring_input_for_sequence_mode(&label_by_seq.unwrap(), label_names_file.as_ref(), &hierarchy_path, add_rev_comps);
                 let priorities = node_priorities_path.as_ref().map(|p| parse_node_priorities(p, hierarchy.names()).unwrap_or_else(|e| panic!("{e}")));
-                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities)
+                build::build_labeling(&base, individual_streams, n_threads, hierarchy, &labeling_name, priorities, variable_k_support)
             };
 
             if let Some(parent) = labeling_out_path.parent() {
