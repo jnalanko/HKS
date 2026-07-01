@@ -42,8 +42,11 @@ hks add-feature-set \
   -o features.hksf \
   --feature-file-list example/file_of_files.txt \
   --feature-hierarchy example/hierarchy.txt \
-  --feature-set-name my_features
+  --feature-set-name my_features \
+  --variable-k-support
 ```
+
+The `--variable-k-support` flag is required here because the query below uses a k-mer length (5) smaller than the index s (10). If you only ever query with k equal to s, you can omit this and get a more efficient index.
 
 This creates two files: `base.hksb` (the base k-mer index) and `features.hksf` (the labeling of k-mers with the following hierarchy):
 
@@ -88,6 +91,7 @@ Options:
   -i, --index <INDEX>          Path to the existing base index file
   -o, --output <OUTPUT>        Output filename for the new feature set file
       --forward-only           Do not add reverse complemented k-mers
+      --variable-k-support     Enable support for all k-mer lengths with k <= s in queries. Can not be used if feature priorities are given (--feature-priorities). This option requires that the base index has a dummy node representative for each prefix of the start of a sequence, otherwise the construction will crash with an error. Only use this if you are sure you know what you are doing.
   -t, --n-threads <N_THREADS>  Number of parallel threads [default: 4]
   -h, --help                   Print help
 
@@ -123,6 +127,7 @@ hks lookup \
 This will print the following:
 
 ```
+query_name	from_kmer	to_kmer	label_name
 Q1	0	1	clade1
 Q1	1	3	example/A.fna
 Q1	3	4	clade1
