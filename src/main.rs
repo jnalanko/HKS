@@ -193,6 +193,9 @@ pub enum Subcommands {
 
         #[arg(help = "Maximum coordinate gap between adjacent intervals considered connected during smoothing.", long = "max-gap", default_value = "0")]
         max_gap: u64,
+
+        #[arg(help = "Number of parallel threads. Smoothing is parallelized across query sequences (each thread smooths one sequence at a time). 1 = the streaming single-threaded path.", short = 't', long = "n-threads", default_value = "4")]
+        n_threads: usize,
     },
 
     #[command(arg_required_else_help = true, about = "Simple reference implementation for debugging this program.")]
@@ -807,7 +810,7 @@ fn main() {
             }
         },
 
-        Subcommands::Smooth { hierarchy, input, output, max_gap } => {
+        Subcommands::Smooth { hierarchy, input, output, max_gap, n_threads } => {
             let (tree, names) = read_hierarchy_file(&hierarchy, &[]);
             let root_id = tree.root();
 
@@ -824,7 +827,13 @@ fn main() {
                 Box::new(std::io::stdout())
             };
 
-            let stats = smooth::run_smooth(input, output, &tree, &names, root_id, max_gap);
+            // n_threads == 1 keeps the low-memory streaming path; > 1 parallelizes
+            // smoothing across query sequences (byte-identical output).
+            let stats = if n_threads <= 1 {
+                smooth::run_smooth(input, output, &tree, &names, root_id, max_gap)
+            } else {
+                smooth::run_smooth_parallel(input, output, &tree, &names, root_id, max_gap, n_threads)
+            };
             log::info!(
                 "Reads processed: {}, Intervals in: {}, Smoothed: {}, Merged: {}, Intervals out: {}",
                 stats.reads_processed, stats.intervals_in, stats.intervals_smoothed,

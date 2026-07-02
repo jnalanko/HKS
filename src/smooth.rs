@@ -376,6 +376,127 @@ pub fn run_smooth(
     stats
 }
 
+/// Parallel smoothing pipeline: smooth each query (sequence) on its own thread.
+///
+/// Each query's intervals are independent, so smoothing + merging can run in
+/// parallel across queries. This function:
+///   1. parses the whole input into consecutive per-query interval groups
+///      (preserving input order, exactly like [`run_smooth`]'s flush-on-change),
+///   2. smooths + merges each group in parallel via rayon, then
+///   3. writes the groups back out in the original input order.
+///
+/// The output is byte-for-byte identical to [`run_smooth`]; only the work is
+/// distributed. `n_threads` controls the smoothing parallelism (a local rayon
+/// pool is built for it). Memory: unlike the streaming [`run_smooth`], this
+/// holds the whole input's intervals in memory at once (still far smaller than
+/// the HKS index itself).
+pub fn run_smooth_parallel(
+    input: impl Read,
+    output: impl Write,
+    tree: &LcaTree,
+    names: &[String],
+    root_id: usize,
+    max_gap: u64,
+    n_threads: usize,
+) -> SmoothStats {
+    use rayon::prelude::*;
+
+    // Build name → id lookup
+    let name_to_id: std::collections::HashMap<String, usize> = names.iter()
+        .enumerate()
+        .map(|(id, name)| (name.clone(), id))
+        .collect();
+
+    let reader = BufReader::new(input);
+    let mut writer = BufWriter::new(output);
+
+    // ---- Phase 1: parse into consecutive per-query groups, in order ----
+    let mut groups: Vec<(String, Vec<Interval>)> = Vec::new();
+    let mut uses_names = false;
+    let mut header_seen = false;
+    let mut header_line: Option<String> = None;
+
+    for line in reader.lines() {
+        let line = line.expect("IO error reading input");
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if !header_seen {
+            if trimmed.starts_with("query_rank") || trimmed.starts_with("query_name") {
+                header_seen = true;
+                uses_names = trimmed.contains("label_name");
+                header_line = Some(trimmed.to_string());
+                continue;
+            }
+            header_seen = true;
+        }
+
+        let mut cols = trimmed.splitn(4, '\t');
+        let query_id = cols.next().expect("missing query column");
+        let start: u64 = cols.next()
+            .and_then(|s| s.parse().ok())
+            .expect("bad start coordinate");
+        let end: u64 = cols.next()
+            .and_then(|s| s.parse().ok())
+            .expect("bad end coordinate");
+        let feat_token = cols.next().expect("missing feature column");
+
+        let (feature, originally_none) = resolve_feature(feat_token, &name_to_id, root_id, uses_names);
+
+        // Start a new group when the query id changes (flush-on-change, so the
+        // grouping matches run_smooth's byte output for consecutive queries).
+        if groups.last().map(|(q, _)| q.as_str()) != Some(query_id) {
+            groups.push((query_id.to_string(), Vec::new()));
+        }
+        groups.last_mut().unwrap().1.push(Interval { start, end, feature, originally_none });
+    }
+
+    // Header goes out first, matching run_smooth.
+    if let Some(h) = &header_line {
+        writeln!(writer, "{}", h).expect("write error");
+    }
+
+    // ---- Phase 2: smooth + merge each group in parallel ----
+    // Per-group result: (n_in, reassigned, eliminated, merged intervals).
+    // Only this parallel map runs in the pool; the (non-Send) input/output
+    // handles are touched solely on this (main) thread, before and after.
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(n_threads)
+        .build()
+        .expect("failed to build rayon thread pool");
+    let results: Vec<(u64, u64, u64, Vec<Interval>)> = pool.install(|| {
+        groups
+            .par_iter_mut()
+            .map(|(_qid, buf)| {
+                let n_in = buf.len() as u64;
+                let reassigned = smooth_intervals(buf, tree, max_gap);
+                let (merged, eliminated) = merge_intervals(std::mem::take(buf));
+                (n_in, reassigned, eliminated, merged)
+            })
+            .collect()
+    });
+
+    // ---- Phase 3: write in input order + accumulate stats ----
+    let mut stats = SmoothStats::default();
+    for ((qid, _), (n_in, reassigned, eliminated, merged)) in groups.iter().zip(results.iter()) {
+        for iv in merged {
+            let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
+            writeln!(writer, "{}\t{}\t{}\t{}", qid, iv.start, iv.end, feat_str)
+                .expect("write error");
+        }
+        stats.reads_processed += 1;
+        stats.intervals_in += n_in;
+        stats.intervals_smoothed += reassigned;
+        stats.intervals_merged += eliminated;
+        stats.intervals_out += merged.len() as u64;
+    }
+
+    writer.flush().expect("flush error");
+    stats
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -435,5 +556,41 @@ mod tests {
         let reassigned = smooth_intervals(&mut intervals, &tree, 1000);
         assert_eq!(reassigned, 0, "nothing to promote when interior is already LCA");
         assert_eq!(intervals[1].feature, a);
+    }
+
+    /// The parallel pipeline must produce byte-identical output to the
+    /// sequential one across multiple queries (some needing promotion, one
+    /// with a `none` run, one single-interval).
+    #[test]
+    fn parallel_matches_sequential() {
+        let tree = cousin_tree(); // B(0), C(1) → A(2) → root(3)
+        let root = tree.root();
+        let names = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "A".to_string(),
+            "root".to_string(),
+        ];
+        let input = "query_name\tfrom_kmer\tto_kmer\tlabel_name\n\
+                     seq1\t0\t100\tB\n\
+                     seq1\t100\t200\troot\n\
+                     seq1\t200\t300\tC\n\
+                     seq2\t0\t50\tnone\n\
+                     seq2\t50\t150\tB\n\
+                     seq2\t150\t250\tC\n\
+                     seq3\t0\t100\tA\n";
+
+        let mut out_seq: Vec<u8> = Vec::new();
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000);
+
+        for nt in [1usize, 2, 4] {
+            let mut out_par: Vec<u8> = Vec::new();
+            let s2 = run_smooth_parallel(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, nt);
+            assert_eq!(out_seq, out_par, "parallel output differs at n_threads={nt}");
+            assert_eq!(s1.reads_processed, s2.reads_processed);
+            assert_eq!(s1.intervals_in, s2.intervals_in);
+            assert_eq!(s1.intervals_smoothed, s2.intervals_smoothed);
+            assert_eq!(s1.intervals_out, s2.intervals_out);
+        }
     }
 }
