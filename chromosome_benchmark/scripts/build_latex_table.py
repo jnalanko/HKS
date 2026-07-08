@@ -58,7 +58,7 @@ log_base_dir = "./preprint_results"
 # Parse index sizes from index_sizes.txt
 index_sizes = {}  # (k, m) -> bytes
 kraken_path_re = re.compile(r'kraken_k(\d+)_m(\d+)/hash\.k2d')
-hks_path_re = re.compile(r'index/CHM13-s63.hks')
+hks_path_re = re.compile(r'index/CHM13-s63\.(hksb|hksf)$')
 try:
     for line in open(f"{log_base_dir}/index_sizes.txt"):
         parts = line.split()
@@ -70,7 +70,8 @@ try:
             k, m = int(kraken_match.group(1)), int(kraken_match.group(2))
             index_sizes[(k, m)] = int(parts[4])
         elif hks_match:
-           hks_index_size = int(parts[4])
+           # HKS index is now split into a base index (.hksb) and a feature set (.hksf); sum both.
+           hks_index_size = (hks_index_size or 0) + int(parts[4])
 except Exception as e:
     sys.stderr.write(str(e) + "\n")
 
