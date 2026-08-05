@@ -25,23 +25,54 @@ pub struct Interval {
 // Core smoothing algorithm (port of Algorithm S1)
 // ---------------------------------------------------------------------------
 
+/// Reusable working buffers for [`smooth_intervals`].
+///
+/// The window scan allocates per *window*, and a whole-chromosome query group
+/// contains millions of windows, so allocating these fresh each time dominates
+/// allocator traffic in a parallel run. Hoisting them here lets one buffer set
+/// serve every window of every group a worker handles: they are cleared, not
+/// reallocated, once they reach steady-state capacity.
+#[derive(Default)]
+pub struct SmoothScratch {
+    was_related: Vec<bool>,
+    related: Vec<usize>,
+    disallowed: HashSet<usize>,
+}
+
 /// Smooth a single query's intervals in-place using the hierarchy.
 /// Returns the number of feature reassignments made.
+///
+/// Allocates its own scratch. Use [`smooth_intervals_with`] when smoothing many
+/// queries so the buffers are reused across them.
 pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: u64) -> u64 {
+    smooth_intervals_with(intervals, tree, max_gap, &mut SmoothScratch::default())
+}
+
+/// [`smooth_intervals`], reusing caller-owned buffers.
+pub fn smooth_intervals_with(
+    intervals: &mut Vec<Interval>,
+    tree: &LcaTree,
+    max_gap: u64,
+    scratch: &mut SmoothScratch,
+) -> u64 {
     if intervals.len() < 2 {
         return 0;
     }
+    // Split the borrow up front so all three buffers can be held at once.
+    let SmoothScratch { was_related, related, disallowed } = scratch;
     let mut total_reassignments = 0u64;
     let n = intervals.len();
 
     loop {
         let mut changed = false;
-        let mut was_related = vec![false; n];
+        was_related.clear();
+        was_related.resize(n, false);
         let mut i = 0;
 
         while i < n {
             let window_start = i;
-            let mut related: Vec<usize> = vec![i];
+            related.clear();
+            related.push(i);
             let mut first_unrelated: Option<usize> = None;
 
             // ------------------------------------------------------------------
@@ -50,7 +81,7 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
             // Unrelated features on other branches are skipped but their ancestor
             // paths are added to `disallowed` so we stop if we'd cross into them.
             // ------------------------------------------------------------------
-            let mut disallowed: HashSet<usize> = HashSet::new();
+            disallowed.clear();
             let mut last_rel_idx = i;
             let mut last_rel_feat = intervals[i].feature;
             let mut last_rel_end = intervals[i].end;
@@ -133,7 +164,7 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
             if related.len() >= 2 {
                 related.pop();
             }
-            for &idx in &related {
+            for &idx in related.iter() {
                 was_related[idx] = true;
             }
 
@@ -186,28 +217,24 @@ pub fn smooth_intervals(intervals: &mut Vec<Interval>, tree: &LcaTree, max_gap: 
 
 /// Merges adjacent intervals that have the same feature and are contiguous.
 /// Returns (merged intervals, number of intervals eliminated).
-pub fn merge_intervals(intervals: Vec<Interval>) -> (Vec<Interval>, u64) {
-    if intervals.is_empty() {
-        return (intervals, 0);
-    }
+pub fn merge_intervals(intervals: &mut Vec<Interval>) -> u64 {
     let n_in = intervals.len();
-    let mut out: Vec<Interval> = Vec::with_capacity(n_in);
-    let mut cur = intervals.into_iter();
-    let mut current = cur.next().unwrap();
-    for next in cur {
+    // `dedup_by` passes (next, current) and drops `next` when the closure is
+    // true, so extending `current` there is exactly the merge. Done in place:
+    // this runs on every worker for every group, and the old version allocated a
+    // second Vec the size of the input each time.
+    intervals.dedup_by(|next, current| {
         if next.feature == current.feature
             && next.start == current.end
             && next.originally_none == current.originally_none
         {
             current.end = next.end;
+            true
         } else {
-            out.push(current);
-            current = next;
+            false
         }
-    }
-    out.push(current);
-    let eliminated = (n_in - out.len()) as u64;
-    (out, eliminated)
+    });
+    (n_in - intervals.len()) as u64
 }
 
 // ---------------------------------------------------------------------------
@@ -251,21 +278,27 @@ fn resolve_feature(
     }
 }
 
-/// Format a feature for output.
-fn format_feature(
+/// Append a feature token to the output buffer.
+///
+/// Writes bytes straight into `out` rather than returning an owned `String`.
+/// This is called once per *output interval*, so returning a `String` meant one
+/// short-lived heap allocation per output line — tens of millions per run, from
+/// every worker at once.
+fn write_feature(
+    out: &mut Vec<u8>,
     feature: usize,
     originally_none: bool,
     names: &[String],
     root_id: usize,
     uses_names: bool,
-) -> String {
+) {
     if originally_none && feature == root_id {
         // Was none and smoothing didn't resolve it → keep as none
-        if uses_names { "none".to_string() } else { "-".to_string() }
+        out.extend_from_slice(if uses_names { b"none".as_slice() } else { b"-".as_slice() });
     } else if uses_names {
-        names[feature].to_string()
+        out.extend_from_slice(names[feature].as_bytes());
     } else {
-        feature.to_string()
+        write!(out, "{feature}").expect("formatting error");
     }
 }
 
@@ -291,16 +324,16 @@ impl SmoothStats {
 /// no per-line `String` allocation, unlike `reader.lines()`.
 fn smooth_group(
     slice: &[u8],
-    tree: &LcaTree,
-    names: &[String],
-    name_to_id: &std::collections::HashMap<String, usize>,
-    root_id: usize,
+    cfg: &SmoothCfg,
     uses_names: bool,
-    max_gap: u64,
-) -> (SmoothStats, Vec<u8>) {
+    intervals: &mut Vec<Interval>,
+    smooth_scratch: &mut SmoothScratch,
+    out: &mut Vec<u8>,
+) -> SmoothStats {
     let mut query_id: &str = "";
     let mut have_qid = false;
-    let mut intervals: Vec<Interval> = Vec::new();
+    intervals.clear();
+    out.clear();
 
     for raw in slice.split(|&b| b == b'\n') {
         let line = raw.trim_ascii();
@@ -325,35 +358,35 @@ fn smooth_group(
             .expect("bad end coordinate");
         let feat_token = std::str::from_utf8(feat_b).expect("non-UTF8 feature name");
 
-        let (feature, originally_none) = resolve_feature(feat_token, name_to_id, root_id, uses_names);
+        let (feature, originally_none) =
+            resolve_feature(feat_token, cfg.name_to_id, cfg.root_id, uses_names);
         intervals.push(Interval { start, end, feature, originally_none });
     }
 
     let n_in = intervals.len() as u64;
-    let reassigned = smooth_intervals(&mut intervals, tree, max_gap);
-    let (merged, eliminated) = merge_intervals(intervals);
-    let n_out = merged.len() as u64;
+    let reassigned = smooth_intervals_with(intervals, cfg.tree, cfg.max_gap, smooth_scratch);
+    let eliminated = merge_intervals(intervals);
+    let n_out = intervals.len() as u64;
 
-    // Grow from empty rather than reserving slice.len(): smoothing+merging
-    // often collapses a huge input group (e.g. a whole chromosome) to a handful
-    // of intervals, so reserving the input size would mmap hundreds of MB per
-    // worker for a few bytes of output — concurrent large reservations serialize
-    // on the kernel's mmap lock and cause a hard regression at high thread counts.
-    let mut out: Vec<u8> = Vec::new();
-    for iv in &merged {
-        let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
-        writeln!(out, "{}\t{}\t{}\t{}", query_id, iv.start, iv.end, feat_str)
-            .expect("formatting error");
+    // `out` is a recycled buffer that has already grown to whatever this
+    // workload needs, so it is neither allocated nor sized here. Sizing per
+    // group is a trap in both directions: reserving the input size mmaps
+    // hundreds of MB per worker for a group that collapses to a few intervals,
+    // while a fixed reserve is huge overhead for read data, where a group's
+    // output is a few dozen bytes and there are millions of them.
+    for iv in intervals.iter() {
+        write!(out, "{}\t{}\t{}\t", query_id, iv.start, iv.end).expect("formatting error");
+        write_feature(out, iv.feature, iv.originally_none, cfg.names, cfg.root_id, uses_names);
+        out.push(b'\n');
     }
 
-    let stats = SmoothStats {
+    SmoothStats {
         reads_processed: 1,
         intervals_in: n_in,
         intervals_smoothed: reassigned,
         intervals_merged: eliminated,
         intervals_out: n_out,
-    };
-    (stats, out)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +471,26 @@ impl Grouper {
     }
 }
 
+thread_local! {
+    /// Per-worker parse and smoothing buffers, one set per pool thread for the
+    /// whole run.
+    ///
+    /// Deliberately not `map_init`: rayon builds that closure's value once per
+    /// *leaf of the split tree*, not once per thread, and the leaf count climbs
+    /// steeply with thread count -- measured at 4 leaves for 1 thread but 3190
+    /// for 16 on one short-read input. Each fresh set then has to re-grow its
+    /// buffers, which for query groups small enough that a leaf covers only a
+    /// couple of dozen of them costs more than the reuse saves. Keying off the
+    /// thread bounds the number of buffer sets by the pool size.
+    static WORKER_BUFS: std::cell::RefCell<(Vec<Interval>, SmoothScratch)> =
+        std::cell::RefCell::new((Vec::new(), SmoothScratch::default()));
+}
+
 /// Smooth one batch of closed groups in parallel and write the output.
+///
+/// `outbufs` is the run's recycled output-buffer pool, owned by `run_smooth` so
+/// it survives across batches; it grows only to the largest group count any one
+/// batch needs, and each buffer keeps the capacity it reached.
 ///
 /// Worker buffers are collected and emitted in input order. Because batches are
 /// processed strictly in sequence, the output is globally order-preserving and
@@ -451,23 +503,32 @@ fn dispatch_batch<W: Write>(
     uses_names: bool,
     writer: &mut W,
     stats: &mut SmoothStats,
+    outbufs: &mut Vec<Vec<u8>>,
 ) {
     use rayon::prelude::*;
     if ranges.is_empty() {
         return;
     }
-    let results: Vec<(SmoothStats, Vec<u8>)> = pool.install(|| {
+    if outbufs.len() < ranges.len() {
+        outbufs.resize_with(ranges.len(), Vec::new);
+    }
+    // One output buffer per group, taken from the run's pool rather than
+    // allocated. `Zip` is an indexed parallel iterator, so results still come
+    // back in input order and the output stays byte-identical at any thread
+    // count.
+    let results: Vec<SmoothStats> = pool.install(|| {
         ranges
             .par_iter()
-            .map(|&(s, e)| {
-                smooth_group(
-                    &bytes[s..e], cfg.tree, cfg.names, cfg.name_to_id, cfg.root_id,
-                    uses_names, cfg.max_gap,
-                )
+            .zip(outbufs[..ranges.len()].par_iter_mut())
+            .map(|(&(s, e), out)| {
+                WORKER_BUFS.with(|cell| {
+                    let (intervals, smooth_scratch) = &mut *cell.borrow_mut();
+                    smooth_group(&bytes[s..e], cfg, uses_names, intervals, smooth_scratch, out)
+                })
             })
             .collect()
     });
-    for (st, out) in &results {
+    for (st, out) in results.iter().zip(outbufs.iter()) {
         writer.write_all(out).expect("write error");
         stats.merge(st);
     }
@@ -554,6 +615,8 @@ pub fn run_smooth(
     let mut writer = BufWriter::new(output);
     let mut stats = SmoothStats::default();
     let mut grouper = Grouper::default();
+    // Recycled across every batch; see dispatch_batch.
+    let mut outbufs: Vec<Vec<u8>> = Vec::new();
     let mut uses_names = false;
     let mut first_content = true;
 
@@ -565,7 +628,8 @@ pub fn run_smooth(
                            writer: &mut BufWriter<_>,
                            stats: &mut SmoothStats,
                            uses_names: &mut bool,
-                           first_content: &mut bool| {
+                           first_content: &mut bool,
+                           outbufs: &mut Vec<Vec<u8>>| {
         let line = raw.trim_ascii();
         if line.is_empty() {
             return;
@@ -583,7 +647,7 @@ pub fn run_smooth(
         grouper.push_line(line);
         if grouper.closed.len() >= cfg.max_groups || grouper.open_start >= cfg.max_bytes {
             let (bytes, ranges) = grouper.take_batch();
-            dispatch_batch(&pool, &bytes, &ranges, &cfg, *uses_names, writer, stats);
+            dispatch_batch(&pool, &bytes, &ranges, &cfg, *uses_names, writer, stats, outbufs);
         }
     };
 
@@ -598,11 +662,11 @@ pub fn run_smooth(
         while let Some(pos) = rest.iter().position(|&b| b == b'\n') {
             if line.is_empty() {
                 handle_line(&rest[..pos], &mut grouper, &mut writer, &mut stats,
-                            &mut uses_names, &mut first_content);
+                            &mut uses_names, &mut first_content, &mut outbufs);
             } else {
                 line.extend_from_slice(&rest[..pos]);
                 handle_line(&line, &mut grouper, &mut writer, &mut stats,
-                            &mut uses_names, &mut first_content);
+                            &mut uses_names, &mut first_content, &mut outbufs);
                 line.clear();
             }
             rest = &rest[pos + 1..];
@@ -612,12 +676,12 @@ pub fn run_smooth(
     // Trailing line with no final newline.
     if !line.is_empty() {
         handle_line(&line, &mut grouper, &mut writer, &mut stats,
-                    &mut uses_names, &mut first_content);
+                    &mut uses_names, &mut first_content, &mut outbufs);
     }
 
     // Flush whatever remains.
     let (bytes, ranges) = grouper.finish();
-    dispatch_batch(&pool, &bytes, &ranges, &cfg, uses_names, &mut writer, &mut stats);
+    dispatch_batch(&pool, &bytes, &ranges, &cfg, uses_names, &mut writer, &mut stats, &mut outbufs);
 
     writer.flush().expect("flush error");
     stats
