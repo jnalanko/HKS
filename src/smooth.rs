@@ -5,7 +5,7 @@
 //! hierarchy and reassigns interior intervals to the LCA of the flanking anchors.
 
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Write};
 
 use crate::lca_tree::LcaTree;
 
@@ -269,128 +269,242 @@ fn format_feature(
     }
 }
 
-/// Flush a completed query: smooth → merge → write.
-fn flush_query(
-    query_id: &str,
-    buf: &mut Vec<Interval>,
+impl SmoothStats {
+    /// Fold one group's partial stats into this accumulator.
+    fn merge(&mut self, o: &SmoothStats) {
+        self.reads_processed += o.reads_processed;
+        self.intervals_in += o.intervals_in;
+        self.intervals_smoothed += o.intervals_smoothed;
+        self.intervals_merged += o.intervals_merged;
+        self.intervals_out += o.intervals_out;
+    }
+}
+
+/// Smooth one query group given as a raw byte slice of the input TSV.
+///
+/// Every line in `slice` shares one query id. Parses the slice, runs
+/// smooth + merge, and renders the result to a freshly allocated byte buffer.
+/// Doing the parse *and* the output formatting here (not just the smoothing
+/// compute) is what lets the parallel path actually scale: parsing and
+/// formatting tens of millions of lines dominate the wall time, so both must
+/// run on the worker thread. Parsing borrows byte subslices of the input —
+/// no per-line `String` allocation, unlike `reader.lines()`.
+fn smooth_group(
+    slice: &[u8],
     tree: &LcaTree,
     names: &[String],
+    name_to_id: &std::collections::HashMap<String, usize>,
     root_id: usize,
     uses_names: bool,
     max_gap: u64,
-    writer: &mut impl Write,
-    stats: &mut SmoothStats,
-) {
-    let n_in = buf.len() as u64;
-    let reassigned = smooth_intervals(buf, tree, max_gap);
-    let (merged, eliminated) = merge_intervals(std::mem::take(buf));
-    let n_out = merged.len() as u64;
+) -> (SmoothStats, Vec<u8>) {
+    let mut query_id: &str = "";
+    let mut have_qid = false;
+    let mut intervals: Vec<Interval> = Vec::new();
 
-    for iv in &merged {
-        let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
-        writeln!(writer, "{}\t{}\t{}\t{}", query_id, iv.start, iv.end, feat_str)
-            .expect("write error");
-    }
-
-    stats.reads_processed += 1;
-    stats.intervals_in += n_in;
-    stats.intervals_smoothed += reassigned;
-    stats.intervals_merged += eliminated;
-    stats.intervals_out += n_out;
-}
-
-/// Run the smoothing pipeline on TSV input.
-pub fn run_smooth(
-    input: impl Read,
-    output: impl Write,
-    tree: &LcaTree,
-    names: &[String],
-    root_id: usize,
-    max_gap: u64,
-) -> SmoothStats {
-    // Build name → id lookup
-    let name_to_id: std::collections::HashMap<String, usize> = names.iter()
-        .enumerate()
-        .map(|(id, name)| (name.clone(), id))
-        .collect();
-
-    let reader = BufReader::new(input);
-    let mut writer = BufWriter::new(output);
-    let mut stats = SmoothStats::default();
-    let mut buf: Vec<Interval> = Vec::new();
-    let mut current_query = String::new();
-    let mut uses_names = false; // determined from header
-    let mut header_seen = false;
-
-    for line in reader.lines() {
-        let line = line.expect("IO error reading input");
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
+    for raw in slice.split(|&b| b == b'\n') {
+        let line = raw.trim_ascii();
+        if line.is_empty() {
             continue;
         }
+        let mut cols = line.splitn(4, |&b| b == b'\t');
+        let qid_b = cols.next().expect("missing query column");
+        let start_b = cols.next().expect("missing start coordinate");
+        let end_b = cols.next().expect("missing end coordinate");
+        let feat_b = cols.next().expect("missing feature column");
 
-        // Parse header
-        if !header_seen {
-            if trimmed.starts_with("query_rank") || trimmed.starts_with("query_name") {
-                header_seen = true;
-                uses_names = trimmed.contains("label_name");
-                // Pass header through
-                writeln!(writer, "{}", trimmed).expect("write error");
-                continue;
-            }
-            // No header line — treat as data
-            header_seen = true;
+        if !have_qid {
+            query_id = std::str::from_utf8(qid_b).expect("non-UTF8 query name");
+            have_qid = true;
         }
-
-        let mut cols = trimmed.splitn(4, '\t');
-        let query_id = cols.next().expect("missing query column");
-        let start: u64 = cols.next()
+        let start: u64 = std::str::from_utf8(start_b).ok()
             .and_then(|s| s.parse().ok())
             .expect("bad start coordinate");
-        let end: u64 = cols.next()
+        let end: u64 = std::str::from_utf8(end_b).ok()
             .and_then(|s| s.parse().ok())
             .expect("bad end coordinate");
-        let feat_token = cols.next().expect("missing feature column");
+        let feat_token = std::str::from_utf8(feat_b).expect("non-UTF8 feature name");
 
-        let (feature, originally_none) = resolve_feature(feat_token, &name_to_id, root_id, uses_names);
+        let (feature, originally_none) = resolve_feature(feat_token, name_to_id, root_id, uses_names);
+        intervals.push(Interval { start, end, feature, originally_none });
+    }
 
-        // Flush on query boundary
-        if query_id != current_query {
-            if !buf.is_empty() {
-                log::info!("Smoothing {}", current_query);
-                flush_query(&current_query, &mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
-            }
-            current_query = query_id.to_string();
+    let n_in = intervals.len() as u64;
+    let reassigned = smooth_intervals(&mut intervals, tree, max_gap);
+    let (merged, eliminated) = merge_intervals(intervals);
+    let n_out = merged.len() as u64;
+
+    // Grow from empty rather than reserving slice.len(): smoothing+merging
+    // often collapses a huge input group (e.g. a whole chromosome) to a handful
+    // of intervals, so reserving the input size would mmap hundreds of MB per
+    // worker for a few bytes of output — concurrent large reservations serialize
+    // on the kernel's mmap lock and cause a hard regression at high thread counts.
+    let mut out: Vec<u8> = Vec::new();
+    for iv in &merged {
+        let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
+        writeln!(out, "{}\t{}\t{}\t{}", query_id, iv.start, iv.end, feat_str)
+            .expect("formatting error");
+    }
+
+    let stats = SmoothStats {
+        reads_processed: 1,
+        intervals_in: n_in,
+        intervals_smoothed: reassigned,
+        intervals_merged: eliminated,
+        intervals_out: n_out,
+    };
+    (stats, out)
+}
+
+// ---------------------------------------------------------------------------
+// Streaming grouper: split the input byte stream into per-query groups without
+// ever holding the whole file in memory.
+// ---------------------------------------------------------------------------
+
+/// Immutable configuration threaded through the streaming parallel path.
+struct SmoothCfg<'a> {
+    tree: &'a LcaTree,
+    names: &'a [String],
+    name_to_id: &'a std::collections::HashMap<String, usize>,
+    root_id: usize,
+    max_gap: u64,
+    max_groups: usize, // dispatch a batch once this many groups have closed …
+    max_bytes: usize,  // … or once the closed groups reach this many bytes.
+}
+
+/// Accumulates data lines into per-query byte groups.
+///
+/// `buf` lays out `[ closed groups … | currently-open group ]`. The open group
+/// is the maximal run of trailing lines that still share `open_qid`; it cannot
+/// be dispatched yet because a later block may extend it. Closed groups (all of
+/// `buf[..open_start]`) are handed off in batches and their bytes reclaimed, so
+/// peak memory is bounded by one batch plus the single largest query group —
+/// never the whole input.
+#[derive(Default)]
+struct Grouper {
+    buf: Vec<u8>,
+    closed: Vec<(usize, usize)>, // ranges into `buf`, all within [0, open_start)
+    open_start: usize,           // start of the open group; also == closed-byte count
+    open_qid: Vec<u8>,
+    have_open: bool,
+}
+
+impl Grouper {
+    /// Append one trimmed, non-empty data line (no trailing newline), closing
+    /// the previous group first if this line begins a new query id.
+    fn push_line(&mut self, line: &[u8]) {
+        let qid = match line.iter().position(|&b| b == b'\t') {
+            Some(k) => &line[..k],
+            None => line,
+        };
+        let ls = self.buf.len();
+        if !self.have_open {
+            self.open_start = ls;
+            self.open_qid.clear();
+            self.open_qid.extend_from_slice(qid);
+            self.have_open = true;
+        } else if self.open_qid.as_slice() != qid {
+            self.closed.push((self.open_start, ls));
+            self.open_start = ls;
+            self.open_qid.clear();
+            self.open_qid.extend_from_slice(qid);
         }
-
-        buf.push(Interval { start, end, feature, originally_none });
+        self.buf.extend_from_slice(line);
+        self.buf.push(b'\n');
     }
 
-    // Flush final query
-    if !buf.is_empty() {
-        log::info!("Smoothing {}", current_query);
-        flush_query(&current_query, &mut buf, tree, names, root_id, uses_names, max_gap, &mut writer, &mut stats);
+    /// Detach the closed groups for dispatch, keeping the open group's bytes at
+    /// the front of a fresh `buf`. Returns `(bytes, ranges)`; `ranges` index the
+    /// returned `bytes`.
+    fn take_batch(&mut self) -> (Vec<u8>, Vec<(usize, usize)>) {
+        let open = self.buf[self.open_start..].to_vec();
+        self.buf.truncate(self.open_start);
+        let bytes = std::mem::replace(&mut self.buf, open);
+        let ranges = std::mem::take(&mut self.closed);
+        self.open_start = 0;
+        (bytes, ranges)
     }
 
-    writer.flush().expect("flush error");
-    stats
+    /// At EOF: close the open group and return everything remaining.
+    fn finish(&mut self) -> (Vec<u8>, Vec<(usize, usize)>) {
+        if self.have_open {
+            let end = self.buf.len();
+            self.closed.push((self.open_start, end));
+            self.have_open = false;
+        }
+        let bytes = std::mem::take(&mut self.buf);
+        let ranges = std::mem::take(&mut self.closed);
+        (bytes, ranges)
+    }
+}
+
+/// Smooth one batch of closed groups in parallel and write the output.
+///
+/// Worker buffers are collected and emitted in input order. Because batches are
+/// processed strictly in sequence, the output is globally order-preserving and
+/// byte-identical regardless of `n_threads`.
+fn dispatch_batch<W: Write>(
+    pool: &rayon::ThreadPool,
+    bytes: &[u8],
+    ranges: &[(usize, usize)],
+    cfg: &SmoothCfg,
+    uses_names: bool,
+    writer: &mut W,
+    stats: &mut SmoothStats,
+) {
+    use rayon::prelude::*;
+    if ranges.is_empty() {
+        return;
+    }
+    let results: Vec<(SmoothStats, Vec<u8>)> = pool.install(|| {
+        ranges
+            .par_iter()
+            .map(|&(s, e)| {
+                smooth_group(
+                    &bytes[s..e], cfg.tree, cfg.names, cfg.name_to_id, cfg.root_id,
+                    uses_names, cfg.max_gap,
+                )
+            })
+            .collect()
+    });
+    for (st, out) in &results {
+        writer.write_all(out).expect("write error");
+        stats.merge(st);
+    }
 }
 
 /// Parallel smoothing pipeline: smooth each query (sequence) on its own thread.
 ///
-/// Each query's intervals are independent, so smoothing + merging can run in
-/// parallel across queries. This function:
-///   1. parses the whole input into consecutive per-query interval groups
-///      (preserving input order, exactly like [`run_smooth`]'s flush-on-change),
-///   2. smooths + merges each group in parallel via rayon, then
-///   3. writes the groups back out in the original input order.
+/// **Streaming / bounded memory.** The input is consumed in fixed-size blocks
+/// and grouped into per-query byte ranges on the fly; complete groups are
+/// dispatched to the worker pool in bounded batches, and each batch's output is
+/// written and reclaimed before more input is read. Peak memory is therefore
+/// `O(batch + largest single query group)` — independent of the total input
+/// size — mirroring the streaming property of the Python smoother. It never
+/// loads the whole file. A single query group is held whole while it is smoothed
+/// (the algorithm needs the full sequence), so an assembly with one enormous
+/// chromosome per group peaks at that one group's size, exactly as the Python
+/// streamer does.
 ///
-/// The output is byte-for-byte identical to [`run_smooth`]; only the work is
-/// distributed. `n_threads` controls the smoothing parallelism (a local rayon
-/// pool is built for it). Memory: unlike the streaming [`run_smooth`], this
-/// holds the whole input's intervals in memory at once (still far smaller than
-/// the HKS index itself).
-pub fn run_smooth_parallel(
+/// Each worker **parses, smooths, and formats its own slice**. The main thread
+/// only splits the byte stream into groups (locate newlines and the first tab
+/// of each line — no integer parsing or feature resolution), which keeps the two
+/// dominant serial costs (parsing and output formatting of tens of millions of
+/// lines) inside the parallel region. The earlier version left both on the main
+/// thread and parallelised only the smoothing compute, capping speedup near
+/// ~1.4x regardless of thread count.
+///
+/// Output is written in input order and is byte-identical regardless of
+/// `n_threads`, so `n_threads == 1` is the canonical reference result. (An
+/// order-agnostic mode was measured to give no speedup even on long reads with a
+/// 3000x straggler ratio — rayon work-stealing over large batches already
+/// balances the load — so it was removed in favour of this single path.)
+///
+/// `n_threads` controls the worker parallelism (a local rayon pool); it is
+/// clamped to at least 1. `n_threads == 1` is the low-memory single-threaded
+/// streaming path — there is deliberately no separate single-threaded function
+/// to keep in sync, only this one entry point.
+pub fn run_smooth(
     input: impl Read,
     output: impl Write,
     tree: &LcaTree,
@@ -399,99 +513,111 @@ pub fn run_smooth_parallel(
     max_gap: u64,
     n_threads: usize,
 ) -> SmoothStats {
-    use rayon::prelude::*;
+    let n_threads = n_threads.max(1);
+    // Read granularity and batch-dispatch thresholds. A batch closes at whichever
+    // limit trips first, keeping peak memory near max_bytes + largest-single-group
+    // + output regardless of total input size (the streaming property).
+    //
+    //  * Reads / many-small-groups: the group cap trips first at a few MiB per
+    //    batch, so memory stays tiny while every batch still fills all threads.
+    //  * Assemblies / few-huge-groups: the byte cap trips instead; it must be a
+    //    healthy multiple of a single group so a batch holds enough chromosomes
+    //    to keep the pool busy (a per-group cap would dispatch one chromosome at
+    //    a time and serialize them). 512 MiB fits several CHM13 chromosomes yet
+    //    stays a constant, input-size-independent bound.
+    const READ_BLOCK: usize = 4 * 1024 * 1024; // 4 MiB
+    const BATCH_MAX_GROUPS: usize = 65536;
+    const BATCH_MAX_BYTES: usize = 512 * 1024 * 1024; // 512 MiB
 
-    // Build name → id lookup
-    let name_to_id: std::collections::HashMap<String, usize> = names.iter()
+    let name_to_id: std::collections::HashMap<String, usize> = names
+        .iter()
         .enumerate()
         .map(|(id, name)| (name.clone(), id))
         .collect();
 
-    let reader = BufReader::new(input);
-    let mut writer = BufWriter::new(output);
+    let cfg = SmoothCfg {
+        tree,
+        names,
+        name_to_id: &name_to_id,
+        root_id,
+        max_gap,
+        max_groups: BATCH_MAX_GROUPS,
+        max_bytes: BATCH_MAX_BYTES,
+    };
 
-    // ---- Phase 1: parse into consecutive per-query groups, in order ----
-    let mut groups: Vec<(String, Vec<Interval>)> = Vec::new();
-    let mut uses_names = false;
-    let mut header_seen = false;
-    let mut header_line: Option<String> = None;
-
-    for line in reader.lines() {
-        let line = line.expect("IO error reading input");
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if !header_seen {
-            if trimmed.starts_with("query_rank") || trimmed.starts_with("query_name") {
-                header_seen = true;
-                uses_names = trimmed.contains("label_name");
-                header_line = Some(trimmed.to_string());
-                continue;
-            }
-            header_seen = true;
-        }
-
-        let mut cols = trimmed.splitn(4, '\t');
-        let query_id = cols.next().expect("missing query column");
-        let start: u64 = cols.next()
-            .and_then(|s| s.parse().ok())
-            .expect("bad start coordinate");
-        let end: u64 = cols.next()
-            .and_then(|s| s.parse().ok())
-            .expect("bad end coordinate");
-        let feat_token = cols.next().expect("missing feature column");
-
-        let (feature, originally_none) = resolve_feature(feat_token, &name_to_id, root_id, uses_names);
-
-        // Start a new group when the query id changes (flush-on-change, so the
-        // grouping matches run_smooth's byte output for consecutive queries).
-        if groups.last().map(|(q, _)| q.as_str()) != Some(query_id) {
-            groups.push((query_id.to_string(), Vec::new()));
-        }
-        groups.last_mut().unwrap().1.push(Interval { start, end, feature, originally_none });
-    }
-
-    // Header goes out first, matching run_smooth.
-    if let Some(h) = &header_line {
-        writeln!(writer, "{}", h).expect("write error");
-    }
-
-    // ---- Phase 2: smooth + merge each group in parallel ----
-    // Per-group result: (n_in, reassigned, eliminated, merged intervals).
-    // Only this parallel map runs in the pool; the (non-Send) input/output
-    // handles are touched solely on this (main) thread, before and after.
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(n_threads)
         .build()
         .expect("failed to build rayon thread pool");
-    let results: Vec<(u64, u64, u64, Vec<Interval>)> = pool.install(|| {
-        groups
-            .par_iter_mut()
-            .map(|(_qid, buf)| {
-                let n_in = buf.len() as u64;
-                let reassigned = smooth_intervals(buf, tree, max_gap);
-                let (merged, eliminated) = merge_intervals(std::mem::take(buf));
-                (n_in, reassigned, eliminated, merged)
-            })
-            .collect()
-    });
 
-    // ---- Phase 3: write in input order + accumulate stats ----
+    let mut input = input;
+    let mut writer = BufWriter::new(output);
     let mut stats = SmoothStats::default();
-    for ((qid, _), (n_in, reassigned, eliminated, merged)) in groups.iter().zip(results.iter()) {
-        for iv in merged {
-            let feat_str = format_feature(iv.feature, iv.originally_none, names, root_id, uses_names);
-            writeln!(writer, "{}\t{}\t{}\t{}", qid, iv.start, iv.end, feat_str)
-                .expect("write error");
+    let mut grouper = Grouper::default();
+    let mut uses_names = false;
+    let mut first_content = true;
+
+    // Process one raw line (may span block boundaries): trim, drop blanks,
+    // capture/emit the header once, otherwise feed the grouper and dispatch a
+    // batch when the thresholds trip.
+    let mut handle_line = |raw: &[u8],
+                           grouper: &mut Grouper,
+                           writer: &mut BufWriter<_>,
+                           stats: &mut SmoothStats,
+                           uses_names: &mut bool,
+                           first_content: &mut bool| {
+        let line = raw.trim_ascii();
+        if line.is_empty() {
+            return;
         }
-        stats.reads_processed += 1;
-        stats.intervals_in += n_in;
-        stats.intervals_smoothed += reassigned;
-        stats.intervals_merged += eliminated;
-        stats.intervals_out += merged.len() as u64;
+        if *first_content {
+            *first_content = false;
+            if line.starts_with(b"query_rank") || line.starts_with(b"query_name") {
+                *uses_names = line.windows(b"label_name".len()).any(|w| w == b"label_name");
+                writer.write_all(line).expect("write error");
+                writer.write_all(b"\n").expect("write error");
+                return;
+            }
+            // Not a header — fall through and treat this line as data.
+        }
+        grouper.push_line(line);
+        if grouper.closed.len() >= cfg.max_groups || grouper.open_start >= cfg.max_bytes {
+            let (bytes, ranges) = grouper.take_batch();
+            dispatch_batch(&pool, &bytes, &ranges, &cfg, *uses_names, writer, stats);
+        }
+    };
+
+    let mut line: Vec<u8> = Vec::new();
+    let mut block = vec![0u8; READ_BLOCK];
+    loop {
+        let nread = input.read(&mut block).expect("IO error reading input");
+        if nread == 0 {
+            break;
+        }
+        let mut rest = &block[..nread];
+        while let Some(pos) = rest.iter().position(|&b| b == b'\n') {
+            if line.is_empty() {
+                handle_line(&rest[..pos], &mut grouper, &mut writer, &mut stats,
+                            &mut uses_names, &mut first_content);
+            } else {
+                line.extend_from_slice(&rest[..pos]);
+                handle_line(&line, &mut grouper, &mut writer, &mut stats,
+                            &mut uses_names, &mut first_content);
+                line.clear();
+            }
+            rest = &rest[pos + 1..];
+        }
+        line.extend_from_slice(rest);
     }
+    // Trailing line with no final newline.
+    if !line.is_empty() {
+        handle_line(&line, &mut grouper, &mut writer, &mut stats,
+                    &mut uses_names, &mut first_content);
+    }
+
+    // Flush whatever remains.
+    let (bytes, ranges) = grouper.finish();
+    dispatch_batch(&pool, &bytes, &ranges, &cfg, uses_names, &mut writer, &mut stats);
 
     writer.flush().expect("flush error");
     stats
@@ -558,9 +684,9 @@ mod tests {
         assert_eq!(intervals[1].feature, a);
     }
 
-    /// The parallel pipeline must produce byte-identical output to the
-    /// sequential one across multiple queries (some needing promotion, one
-    /// with a `none` run, one single-interval).
+    /// Multi-threaded output must be byte-identical to the single-threaded
+    /// (`n_threads == 1`) reference across multiple queries (some needing
+    /// promotion, one with a `none` run, one single-interval).
     #[test]
     fn parallel_matches_sequential() {
         let tree = cousin_tree(); // B(0), C(1) → A(2) → root(3)
@@ -581,16 +707,51 @@ mod tests {
                      seq3\t0\t100\tA\n";
 
         let mut out_seq: Vec<u8> = Vec::new();
-        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000);
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, 1);
 
         for nt in [1usize, 2, 4] {
             let mut out_par: Vec<u8> = Vec::new();
-            let s2 = run_smooth_parallel(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, nt);
+            let s2 =
+                run_smooth(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, nt);
             assert_eq!(out_seq, out_par, "parallel output differs at n_threads={nt}");
             assert_eq!(s1.reads_processed, s2.reads_processed);
             assert_eq!(s1.intervals_in, s2.intervals_in);
             assert_eq!(s1.intervals_smoothed, s2.intervals_smoothed);
             assert_eq!(s1.intervals_out, s2.intervals_out);
         }
+    }
+
+    /// Force the streaming path across several batch dispatches: with far more
+    /// query groups than `BATCH_MAX_GROUPS` (65536), `take_batch` fires mid-stream
+    /// multiple times. Output must still be byte-identical to the sequential run,
+    /// proving batch boundaries preserve global order.
+    #[test]
+    fn streaming_batches_preserve_order() {
+        let tree = cousin_tree();
+        let root = tree.root();
+        let names = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "A".to_string(),
+            "root".to_string(),
+        ];
+        // 140000 sequences (> 2 * 65536) each of the promote pattern B, root, C.
+        let mut input = String::from("query_name\tfrom_kmer\tto_kmer\tlabel_name\n");
+        for i in 0..140000 {
+            input.push_str(&format!(
+                "seq{i}\t0\t100\tB\nseq{i}\t100\t200\troot\nseq{i}\t200\t300\tC\n"
+            ));
+        }
+
+        let mut out_seq: Vec<u8> = Vec::new();
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, 1);
+
+        let mut out_ord: Vec<u8> = Vec::new();
+        let s2 =
+            run_smooth(input.as_bytes(), &mut out_ord, &tree, &names, root, 1000, 4);
+        assert_eq!(out_seq, out_ord, "ordered streaming output differs across batches");
+        assert_eq!(s1.reads_processed, s2.reads_processed);
+        assert_eq!(s1.reads_processed, 140000);
+        assert_eq!(s1.intervals_smoothed, s2.intervals_smoothed);
     }
 }

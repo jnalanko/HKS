@@ -1,5 +1,6 @@
 #![allow(non_snake_case, clippy::needless_range_loop, clippy::len_zero)] // Using upper-case variable names from the source material
 
+
 use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, BufWriter, Write}, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use clap::{Parser, Subcommand};
 use io::{LazyFileSeqStream, SingleSeqStream};
@@ -827,13 +828,12 @@ fn main() {
                 Box::new(std::io::stdout())
             };
 
-            // n_threads == 1 keeps the low-memory streaming path; > 1 parallelizes
-            // smoothing across query sequences (byte-identical output).
-            let stats = if n_threads <= 1 {
-                smooth::run_smooth(input, output, &tree, &names, root_id, max_gap)
-            } else {
-                smooth::run_smooth_parallel(input, output, &tree, &names, root_id, max_gap, n_threads)
-            };
+            // Single streaming entry point for every thread count. n_threads == 1
+            // is the low-memory single-threaded path; > 1 parallelizes smoothing
+            // across query sequences. Output is byte-identical for any thread count.
+            let stats = smooth::run_smooth(
+                input, output, &tree, &names, root_id, max_gap, n_threads,
+            );
             log::info!(
                 "Reads processed: {}, Intervals in: {}, Smoothed: {}, Merged: {}, Intervals out: {}",
                 stats.reads_processed, stats.intervals_in, stats.intervals_smoothed,
