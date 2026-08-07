@@ -206,10 +206,10 @@ pub enum Subcommands {
         #[arg(help = "The label that marks a miss in the input, i.e. the value of --miss-label that was given to the lookup command. Misses that smoothing does not resolve are written out with this same label. Defaults to 'none', or to '-' if the input has label ids instead of label names.", long = "miss-label")]
         miss_label: Option<String>,
 
-        #[arg(help = "The input has no header line, e.g. a headerless BED file. The first line is then read as data, and no header is written to the output.", long = "no-header")]
+        #[arg(help = "Do not print the header line. A header line in the input is still read, it is just not passed on to the output.", long = "no-header")]
         no_header: bool,
 
-        #[arg(help = "The label column of the input contains internal label ids instead of label names (see --report-label-ids of the lookup command). Only for --no-header input: with a header line, the header itself says which of the two it is.", long = "report-label-ids", requires = "no_header")]
+        #[arg(help = "The label column of the input contains internal label ids instead of label names (see --report-label-ids of the lookup command). Only consulted for input that has no header line, e.g. a BED file: a header line already says which of the two it is, and that wins.", long = "report-label-ids")]
         report_label_ids: bool,
 
         #[arg(help = "Number of parallel threads. Smoothing is parallelized across query sequences (each thread smooths one sequence at a time). 1 = the streaming single-threaded path.", short = 't', long = "n-threads", default_value = "4")]

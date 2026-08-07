@@ -633,12 +633,10 @@ pub fn run_smooth(
     let mut grouper = Grouper::default();
     // Recycled across every batch; see dispatch_batch.
     let mut outbufs: Vec<Vec<u8>> = Vec::new();
-    // A header line, if there is one, states whether the label column has names
-    // or ids. With --no-header there is no line to sniff, so the caller says
-    // which it is. Without a header line and without --no-header we keep the old
-    // fallback of treating the input as ids.
-    let mut uses_names = no_header && !report_label_ids;
-    let mut first_content = !no_header;
+    // Whether the label column holds names or ids comes from --report-label-ids,
+    // which a header line in the input overrides below if there is one.
+    let mut uses_names = !report_label_ids;
+    let mut first_content = true;
 
     // Process one raw line (may span block boundaries): trim, drop blanks,
     // capture/emit the header once, otherwise feed the grouper and dispatch a
@@ -657,9 +655,17 @@ pub fn run_smooth(
         if *first_content {
             *first_content = false;
             if line.starts_with(b"query_rank") || line.starts_with(b"query_name") {
-                *uses_names = line.windows(b"label_name".len()).any(|w| w == b"label_name");
-                writer.write_all(line).expect("write error");
-                writer.write_all(b"\n").expect("write error");
+                // The header names the fourth column "label_name" for label names
+                // and "label" for label ids, so it knows better than the flag.
+                let header_says_names = line.windows(b"label_name".len()).any(|w| w == b"label_name");
+                if report_label_ids && header_says_names {
+                    log::warn!("The input header says the fourth column holds label names, not label ids as --report-label-ids says. Trusting the header.");
+                }
+                *uses_names = header_says_names;
+                if !no_header {
+                    writer.write_all(line).expect("write error");
+                    writer.write_all(b"\n").expect("write error");
+                }
                 return;
             }
             // Not a header — fall through and treat this line as data.
@@ -805,8 +811,9 @@ mod tests {
         }
     }
 
-    /// Headerless input (e.g. a BED file) must smooth to the same records as the
-    /// same input with a header, minus the header line itself.
+    /// Headerless input (e.g. a BED file) needs no flag and must smooth to the
+    /// same records as the same input with a header, minus the header line. Also
+    /// checks that --no-header on the headered input drops just that line.
     #[test]
     fn headerless_input_matches_headered() {
         let tree = cousin_tree();
@@ -826,13 +833,47 @@ mod tests {
 
         let mut out_headered: Vec<u8> = Vec::new();
         run_smooth(with_header.as_bytes(), &mut out_headered, &tree, &names, root, 1000, None, false, false, 1);
+        let headered_records = &out_headered[out_headered.iter().position(|&b| b == b'\n').unwrap() + 1..];
 
         for nt in [1usize, 2] {
             let mut out_headerless: Vec<u8> = Vec::new();
-            run_smooth(records.as_bytes(), &mut out_headerless, &tree, &names, root, 1000, None, true, false, nt);
-            let headered_records = &out_headered[out_headered.iter().position(|&b| b == b'\n').unwrap() + 1..];
+            run_smooth(records.as_bytes(), &mut out_headerless, &tree, &names, root, 1000, None, false, false, nt);
             assert_eq!(headered_records, out_headerless, "headerless output differs at n_threads={nt}");
+
+            // Same input, but with the header line, suppressed by --no-header.
+            let mut out_suppressed: Vec<u8> = Vec::new();
+            run_smooth(with_header.as_bytes(), &mut out_suppressed, &tree, &names, root, 1000, None, true, false, nt);
+            assert_eq!(headered_records, out_suppressed, "--no-header output differs at n_threads={nt}");
         }
+    }
+
+    /// A header line states whether the label column holds names or ids, so it
+    /// wins over --report-label-ids.
+    #[test]
+    fn header_overrides_report_label_ids() {
+        let tree = cousin_tree();
+        let root = tree.root();
+        let names = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "A".to_string(),
+            "root".to_string(),
+        ];
+        let input = "query_name\tfrom_kmer\tto_kmer\tlabel_name\n\
+                     seq1\t0\t100\tB\n\
+                     seq1\t100\t200\troot\n\
+                     seq1\t200\t300\tC\n";
+
+        let mut out: Vec<u8> = Vec::new();
+        run_smooth(input.as_bytes(), &mut out, &tree, &names, root, 1000, None, false, true, 1);
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "query_name\tfrom_kmer\tto_kmer\tlabel_name\n\
+             seq1\t0\t100\tB\n\
+             seq1\t100\t200\tA\n\
+             seq1\t200\t300\tC\n",
+            "the label names of the header should have been read as names"
+        );
     }
 
     /// Headerless input in label id mode: the label column is parsed as node ids,
@@ -853,7 +894,7 @@ mod tests {
                        seq2\t0\t50\t-\n";
 
         let mut out: Vec<u8> = Vec::new();
-        run_smooth(records.as_bytes(), &mut out, &tree, &names, root, 1000, None, true, true, 1);
+        run_smooth(records.as_bytes(), &mut out, &tree, &names, root, 1000, None, false, true, 1);
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "seq1\t0\t100\t0\n\
