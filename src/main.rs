@@ -232,8 +232,8 @@ pub enum Subcommands {
 
 #[derive(Parser, Debug)]
 pub struct LookupQueryArgs {
-    #[arg(help = "A fasta/fastq query file", short, long, required = true)]
-    query: PathBuf,
+    #[arg(help = "A fasta/fastq query file. Can be given multiple times to run several query files against the same index, which is then loaded only once. Each query file needs its own --output, in the same order.", short, long, required = true)]
+    query: Vec<PathBuf>,
 
     #[arg(help = "Print query names instead of query rank integers.", long = "report-query-names")]
     report_query_names: bool,
@@ -253,8 +253,26 @@ pub struct LookupQueryArgs {
     #[arg(help = "Report internal label id integers instead of label names. This might save a lot of space if the labels are long. Use --print-hierarchy to print the internal ids.", long = "report-label-ids", help_heading = "Advanced")]
     report_label_ids: bool,
 
-    #[arg(help = "Output file. Defaults to stdout.", short, long)]
-    output: Option<PathBuf>,
+    #[arg(help = "Output file for the query file given at the same position on the command line. If there is just one query file, this can be left out to write to stdout instead.", short, long)]
+    output: Vec<PathBuf>,
+}
+
+impl LookupQueryArgs {
+    // Pairs each query file with the output file it is written to, or with None for stdout.
+    fn query_output_pairs(&self) -> Result<Vec<(&PathBuf, Option<&PathBuf>)>, String> {
+        if self.output.is_empty() {
+            // Writing several query files to stdout would interleave their runs into
+            // a single stream with no way to tell which query file a run came from.
+            if self.query.len() > 1 {
+                return Err(format!("Got {} query files but no --output. Only a single query file can be written to stdout; give one --output per --query.", self.query.len()));
+            }
+            return Ok(self.query.iter().map(|q| (q, None)).collect());
+        }
+        if self.output.len() != self.query.len() {
+            return Err(format!("Got {} --query and {} --output. Give one --output per --query, in the same order, or no --output at all to write a single query file to stdout.", self.query.len(), self.output.len()));
+        }
+        Ok(self.query.iter().zip(self.output.iter().map(Some)).collect())
+    }
 }
 
 
@@ -430,21 +448,13 @@ fn run_queries<A: ColoredKmerLookupAlgorithm + Send + Sync, W: RunWriter>(n_thre
     parallel_queries::lookup_parallel(n_threads, reader, index, batch_size, k, writer);
 }
 
+// Runs every query file against the index in turn, each into its own output file.
 fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &LookupQueryArgs) -> Result<(), String> {
     let k = index.query_k();
-    let seq_names = if args.report_query_names { Some(load_seq_names(&args.query)?) } else { None };
     let color_names: Option<Vec<String>> = if args.report_label_ids {
         None
     } else {
         Some(index.inner().labeling().hierarchy.names().to_vec())
-    };
-    let reader = open_fastx(&args.query)?;
-
-    // A dynamic writer is fine performance-wise because it's wrapped in a buffered writer.
-    let out: Box<dyn Write + Send> = if let Some(ref path) = args.output {
-        Box::new(File::create(path).map_err(|e| format!("Could not create output file {}: {e}", path.display()))?)
-    } else {
-        Box::new(std::io::stdout())
     };
     let misses = if args.report_misses {
         let label = args.miss_label.clone().unwrap_or_else(||
@@ -454,12 +464,24 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
     } else {
         MissPolicy::IgnoreMisses
     };
-    let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names, misses, !args.no_header);
 
     let algo = LookupAlgorithmImpl { index };
 
-    log::info!("Running queries from {} ...", args.query.display());
-    run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
+    for (query, output) in args.query_output_pairs()? {
+        let seq_names = if args.report_query_names { Some(load_seq_names(query)?) } else { None };
+        let reader = open_fastx(query)?;
+
+        // A dynamic writer is fine performance-wise because it's wrapped in a buffered writer.
+        let out: Box<dyn Write + Send> = if let Some(path) = output {
+            Box::new(File::create(path).map_err(|e| format!("Could not create output file {}: {e}", path.display()))?)
+        } else {
+            Box::new(std::io::stdout())
+        };
+        let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names.clone(), misses.clone(), !args.no_header);
+
+        log::info!("Running queries from {} ...", query.display());
+        run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
+    }
     Ok(())
 }
 
@@ -765,6 +787,10 @@ fn main() {
 
 
         Subcommands::Lookup { index: index_path, labeling_file, k, n_threads, query_args } => {
+            // Check the query and output files against each other before spending
+            // time on loading the index.
+            query_args.query_output_pairs().unwrap_or_else(|e| panic!("Error: {e}"));
+
             log::info!("Loading the index ...");
             let index_loading_start = std::time::Instant::now();
             let index = load_index(&index_path, labeling_file);

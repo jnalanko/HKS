@@ -163,7 +163,7 @@ Options:
   -t, --n-threads <N_THREADS>
           Number of parallel threads [default: 4]
   -q, --query <QUERY>
-          A fasta/fastq query file
+          A fasta/fastq query file. Can be given multiple times to run several query files against the same index, which is then loaded only once. Each query file needs its own --output, in the same order.
       --report-query-names
           Print query names instead of query rank integers.
       --report-misses
@@ -173,7 +173,7 @@ Options:
       --no-header
           Do not print the header line.
   -o, --output <OUTPUT>
-          Output file. Defaults to stdout.
+          Output file for the query file given at the same position on the command line. If there is just one query file, this can be left out to write to stdout instead.
   -h, --help
           Print help
 
