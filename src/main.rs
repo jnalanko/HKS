@@ -390,6 +390,21 @@ fn resolve_labeling_file(index_path: &PathBuf, labeling_file: Option<PathBuf>) -
     labeling_file.unwrap_or_else(|| index_path.with_extension("hksf"))
 }
 
+// Reports how long reading a file took, with its size and the resulting
+// throughput when the size is available.
+fn log_load(what: &str, path: &Path, elapsed: std::time::Duration) {
+    let secs = elapsed.as_secs_f64();
+    match std::fs::metadata(path).map(|m| m.len()) {
+        Ok(bytes) => {
+            let gib = bytes as f64 / (1 << 30) as f64;
+            log::info!("Loaded {what} from {} ({gib:.2} GiB) in {secs:.2} s ({:.2} GiB/s)",
+                path.display(),
+                if secs > 0.0 { gib / secs } else { f64::INFINITY });
+        }
+        Err(_) => log::info!("Loaded {what} from {} in {secs:.2} s", path.display()),
+    }
+}
+
 fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKColorIndex {
     let labeling_path = resolve_labeling_file(index_path, labeling_file);
     let mut base_input = BufReader::new(File::open(index_path)
@@ -397,8 +412,16 @@ fn load_index(index_path: &PathBuf, labeling_file: Option<PathBuf>) -> FixedKCol
     let mut fs_input = BufReader::new(File::open(&labeling_path)
         .unwrap_or_else(|e| panic!("Could not open feature set file {}: {e}", labeling_path.display())));
 
+    // Timed separately: the two files are of very different sizes, and which of
+    // the two dominates the load is not obvious from the outside.
+    let base_start = std::time::Instant::now();
     let base = HksBase::<LcsWrapper>::load(&mut base_input);
+    log_load("base index", index_path, base_start.elapsed());
+
+    let labeling_start = std::time::Instant::now();
     let labeling = Labeling::<SimpleColorStorage>::load_from_file(&mut fs_input);
+    log_load("feature set", &labeling_path, labeling_start.elapsed());
+
     assert!(base.sbwt().n_sets() == labeling.color_assignments.len(), "Mismatched feature set file and base index");
     let index = FixedKColorIndex::from_parts(base, labeling);
     log::info!("Loaded index with s = {}", index.k());
@@ -479,8 +502,13 @@ fn run_lookup_with_args(index: &ShortKColorIndex, n_threads: usize, args: &Looku
         };
         let writer = OutputWriter::new(BufWriter::with_capacity(1 << 21, out), seq_names, color_names.clone(), misses.clone(), !args.no_header);
 
+        // Timed per query file, not for the whole subcommand: with a repeatable
+        // --query the point is that the index load is paid once and the queries
+        // several times, so one figure covering both would hide exactly that.
         log::info!("Running queries from {} ...", query.display());
+        let query_start = std::time::Instant::now();
         run_queries(n_threads, reader, &algo, args.batch_size as usize, k, writer);
+        log::info!("Queries from {} finished in {:.2} s ({n_threads} threads)", query.display(), query_start.elapsed().as_secs_f64());
     }
     Ok(())
 }
@@ -885,10 +913,15 @@ fn main() {
             // Single streaming entry point for every thread count. n_threads == 1
             // is the low-memory single-threaded path; > 1 parallelizes smoothing
             // across query sequences. Output is byte-identical for any thread count.
+            let smooth_start = std::time::Instant::now();
             let stats = smooth::run_smooth(
                 input, output, &tree, &names, root_id, max_gap, miss_label.as_deref(),
                 no_header, report_label_ids, n_threads,
             );
+            let secs = smooth_start.elapsed().as_secs_f64();
+            let m_intervals = stats.intervals_in as f64 / 1e6;
+            log::info!("Smoothing finished in {secs:.2} s ({n_threads} threads, {:.1} M intervals/s in)",
+                if secs > 0.0 { m_intervals / secs } else { f64::INFINITY });
             log::info!(
                 "Reads processed: {}, Intervals in: {}, Smoothed: {}, Merged: {}, Intervals out: {}",
                 stats.reads_processed, stats.intervals_in, stats.intervals_smoothed,
