@@ -200,7 +200,7 @@ pub enum Subcommands {
         #[arg(help = "Output file. Defaults to stdout.", short, long)]
         output: Option<PathBuf>,
 
-        #[arg(help = "Maximum coordinate gap between adjacent intervals considered connected during smoothing.", long = "max-gap", default_value = "0")]
+        #[arg(help = "Maximum coordinate gap between adjacent intervals considered connected during smoothing.", long = "max-gap", default_value = "1000")]
         max_gap: u64,
 
         #[arg(help = "The label that marks a miss in the input, i.e. the value of --miss-label that was given to the lookup command. Misses that smoothing does not resolve are written out with this same label. Defaults to 'none', or to '-' if the input has label ids instead of label names.", long = "miss-label")]
