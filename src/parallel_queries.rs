@@ -15,17 +15,26 @@ impl<T: RunWriter + ?Sized> RunWriter for &mut T {
     fn flush(&mut self) { (**self).flush() }
 }
 
+/// What to do with runs of k-mers that were not found in the index.
+#[derive(Clone, Debug)]
+pub enum MissPolicy {
+    /// Print a line for the run, with `label` in the label column.
+    ReportMisses{label: String},
+    /// Print nothing for the run.
+    IgnoreMisses,
+}
+
 pub struct OutputWriter<W: Write> {
     out: W,
     seq_names: Option<Vec<String>>,
     color_names: Option<Vec<String>>,
-    report_misses: bool,
+    misses: MissPolicy,
     print_header: bool,
 }
 
 impl<W: Write> OutputWriter<W> {
-    pub fn new(out: W, seq_names: Option<Vec<String>>, color_names: Option<Vec<String>>, report_misses: bool, print_header: bool) -> Self {
-        Self { out, seq_names, color_names, report_misses, print_header }
+    pub fn new(out: W, seq_names: Option<Vec<String>>, color_names: Option<Vec<String>>, misses: MissPolicy, print_header: bool) -> Self {
+        Self { out, seq_names, color_names, misses, print_header }
     }
 
     #[cfg(test)]
@@ -45,7 +54,12 @@ impl<W: Write + Send> RunWriter for OutputWriter<W> {
 
     fn write_run(&mut self, seq_id: isize, run_color: Option<usize>, range: Range<usize>) {
         if range.is_empty() { return; }
-        if run_color.is_none() && !self.report_misses { return; }
+
+        let miss_label = match &self.misses {
+            MissPolicy::ReportMisses{label} => Some(label.as_str()),
+            MissPolicy::IgnoreMisses => None,
+        };
+        if run_color.is_none() && miss_label.is_none() { return; }
 
         let from = range.start;
         let to = range.end;
@@ -56,7 +70,7 @@ impl<W: Write + Send> RunWriter for OutputWriter<W> {
         }
         write!(self.out, "\t{from}\t{to}\t").unwrap();
         match run_color {
-            None => write!(self.out, "{}", if self.color_names.is_some() { "none" } else { "-" }).unwrap(),
+            None => write!(self.out, "{}", miss_label.unwrap()).unwrap(), // Unwrap ok: checked above
             Some(c) => match &self.color_names {
                 Some(names) => write!(self.out, "{}", &names[c]).unwrap(),
                 None => write!(self.out, "{c}").unwrap(),
@@ -343,7 +357,7 @@ mod tests {
     use rand_chacha::rand_core::{RngCore, SeedableRng};
     use sbwt::{BitPackedKmerSortingMem, SeqStream};
 
-    use crate::{color_storage::SimpleColorStorage, parallel_queries::{OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling, LcsWrapper}, traits::ColoredKmerLookupAlgorithm};
+    use crate::{color_storage::SimpleColorStorage, parallel_queries::{MissPolicy, OutputWriter, lookup_parallel}, single_colored_kmers::{ColorHierarchy, HksBase, HksIndex, Labeling, LcsWrapper}, traits::ColoredKmerLookupAlgorithm};
 
     struct HksIndexLookup<'a> {
         index: &'a HksIndex<LcsWrapper, SimpleColorStorage>,
@@ -492,7 +506,7 @@ mod tests {
 
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
-        let mut writer = OutputWriter::new(out, None, None, false, true);
+        let mut writer = OutputWriter::new(out, None, None, MissPolicy::IgnoreMisses, true);
         let sck_lookup = HksIndexLookup { index: &sck };
         lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck_lookup, batch_size, k, &mut writer);
 
@@ -609,7 +623,7 @@ mod tests {
 
         let out_vec = Vec::<u8>::new();
         let out = std::io::Cursor::new(out_vec);
-        let mut writer = OutputWriter::new(out, None, None, false, true);
+        let mut writer = OutputWriter::new(out, None, None, MissPolicy::IgnoreMisses, true);
         let sck_lookup = HksIndexLookup { index: &sck };
         lookup_parallel(2, MultiSeqStream::new(queries.clone()), &sck_lookup, batch_size, query_k, &mut writer);
 

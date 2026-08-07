@@ -167,7 +167,9 @@ Options:
       --report-query-names
           Print query names instead of query rank integers.
       --report-misses
-          Print lines for runs of k-mers not found in the index. The miss symbol is 'none' normally, or '-' when --report-label-ids is set.
+          Print lines for runs of k-mers not found in the index. The label of such a run is given by --miss-label.
+      --miss-label <MISS_LABEL>
+          The label to print for runs of k-mers not found in the index (see --report-misses). Defaults to 'none', or to '-' when --report-label-ids is set.
       --no-header
           Do not print the header line.
   -o, --output <OUTPUT>

@@ -250,6 +250,14 @@ pub struct SmoothStats {
     pub intervals_out: u64,
 }
 
+/// The label that marks a miss in the input, which is also the one we write back
+/// out. This is the value of --miss-label if it was given, and otherwise the
+/// default of the lookup command, which depends on whether the input has label
+/// names or label ids.
+fn resolve_miss_label(miss_label: Option<&str>, uses_names: bool) -> &str {
+    miss_label.unwrap_or(if uses_names { crate::DEFAULT_MISS_LABEL } else { crate::DEFAULT_MISS_LABEL_ID_MODE })
+}
+
 /// Resolve a feature token from the TSV input into a node ID.
 /// Returns (node_id, originally_none).
 fn resolve_feature(
@@ -257,24 +265,19 @@ fn resolve_feature(
     name_to_id: &std::collections::HashMap<String, usize>,
     root_id: usize,
     uses_names: bool,
+    miss_label: &str,
 ) -> (usize, bool) {
-    if uses_names {
-        if token == "none" {
-            (root_id, true)
-        } else {
-            let id = name_to_id.get(token)
-                .unwrap_or_else(|| panic!("Unknown feature name in input: {:?}", token));
-            (*id, false)
-        }
+    if token == miss_label {
+        (root_id, true)
+    } else if uses_names {
+        let id = name_to_id.get(token)
+            .unwrap_or_else(|| panic!("Unknown feature name in input: {:?}", token));
+        (*id, false)
     } else {
         // Numeric ID mode
-        if token == "-" {
-            (root_id, true)
-        } else {
-            let id: usize = token.parse()
-                .unwrap_or_else(|_| panic!("Cannot parse feature ID: {:?}", token));
-            (id, false)
-        }
+        let id: usize = token.parse()
+            .unwrap_or_else(|_| panic!("Cannot parse feature ID: {:?}", token));
+        (id, false)
     }
 }
 
@@ -291,10 +294,11 @@ fn write_feature(
     names: &[String],
     root_id: usize,
     uses_names: bool,
+    miss_label: &str,
 ) {
     if originally_none && feature == root_id {
-        // Was none and smoothing didn't resolve it → keep as none
-        out.extend_from_slice(if uses_names { b"none".as_slice() } else { b"-".as_slice() });
+        // Was a miss and smoothing didn't resolve it → keep it as a miss
+        out.extend_from_slice(miss_label.as_bytes());
     } else if uses_names {
         out.extend_from_slice(names[feature].as_bytes());
     } else {
@@ -335,6 +339,8 @@ fn smooth_group(
     intervals.clear();
     out.clear();
 
+    let miss_label = resolve_miss_label(cfg.miss_label, uses_names);
+
     for raw in slice.split(|&b| b == b'\n') {
         let line = raw.trim_ascii();
         if line.is_empty() {
@@ -359,7 +365,7 @@ fn smooth_group(
         let feat_token = std::str::from_utf8(feat_b).expect("non-UTF8 feature name");
 
         let (feature, originally_none) =
-            resolve_feature(feat_token, cfg.name_to_id, cfg.root_id, uses_names);
+            resolve_feature(feat_token, cfg.name_to_id, cfg.root_id, uses_names, miss_label);
         intervals.push(Interval { start, end, feature, originally_none });
     }
 
@@ -376,7 +382,7 @@ fn smooth_group(
     // output is a few dozen bytes and there are millions of them.
     for iv in intervals.iter() {
         write!(out, "{}\t{}\t{}\t", query_id, iv.start, iv.end).expect("formatting error");
-        write_feature(out, iv.feature, iv.originally_none, cfg.names, cfg.root_id, uses_names);
+        write_feature(out, iv.feature, iv.originally_none, cfg.names, cfg.root_id, uses_names, miss_label);
         out.push(b'\n');
     }
 
@@ -401,6 +407,7 @@ struct SmoothCfg<'a> {
     name_to_id: &'a std::collections::HashMap<String, usize>,
     root_id: usize,
     max_gap: u64,
+    miss_label: Option<&'a str>, // None = the lookup command default, see resolve_miss_label
     max_groups: usize, // dispatch a batch once this many groups have closed …
     max_bytes: usize,  // … or once the closed groups reach this many bytes.
 }
@@ -572,6 +579,7 @@ pub fn run_smooth(
     names: &[String],
     root_id: usize,
     max_gap: u64,
+    miss_label: Option<&str>,
     n_threads: usize,
 ) -> SmoothStats {
     let n_threads = n_threads.max(1);
@@ -602,6 +610,7 @@ pub fn run_smooth(
         name_to_id: &name_to_id,
         root_id,
         max_gap,
+        miss_label,
         max_groups: BATCH_MAX_GROUPS,
         max_bytes: BATCH_MAX_BYTES,
     };
@@ -771,12 +780,12 @@ mod tests {
                      seq3\t0\t100\tA\n";
 
         let mut out_seq: Vec<u8> = Vec::new();
-        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, 1);
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, 1);
 
         for nt in [1usize, 2, 4] {
             let mut out_par: Vec<u8> = Vec::new();
             let s2 =
-                run_smooth(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, nt);
+                run_smooth(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, None, nt);
             assert_eq!(out_seq, out_par, "parallel output differs at n_threads={nt}");
             assert_eq!(s1.reads_processed, s2.reads_processed);
             assert_eq!(s1.intervals_in, s2.intervals_in);
@@ -808,11 +817,11 @@ mod tests {
         }
 
         let mut out_seq: Vec<u8> = Vec::new();
-        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, 1);
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, 1);
 
         let mut out_ord: Vec<u8> = Vec::new();
         let s2 =
-            run_smooth(input.as_bytes(), &mut out_ord, &tree, &names, root, 1000, 4);
+            run_smooth(input.as_bytes(), &mut out_ord, &tree, &names, root, 1000, None, 4);
         assert_eq!(out_seq, out_ord, "ordered streaming output differs across batches");
         assert_eq!(s1.reads_processed, s2.reads_processed);
         assert_eq!(s1.reads_processed, 140000);
