@@ -206,6 +206,12 @@ pub enum Subcommands {
         #[arg(help = "The label that marks a miss in the input, i.e. the value of --miss-label that was given to the lookup command. Misses that smoothing does not resolve are written out with this same label. Defaults to 'none', or to '-' if the input has label ids instead of label names.", long = "miss-label")]
         miss_label: Option<String>,
 
+        #[arg(help = "The input has no header line, e.g. a headerless BED file. The first line is then read as data, and no header is written to the output.", long = "no-header")]
+        no_header: bool,
+
+        #[arg(help = "The label column of the input contains internal label ids instead of label names (see --report-label-ids of the lookup command). Only for --no-header input: with a header line, the header itself says which of the two it is.", long = "report-label-ids", requires = "no_header")]
+        report_label_ids: bool,
+
         #[arg(help = "Number of parallel threads. Smoothing is parallelized across query sequences (each thread smooths one sequence at a time). 1 = the streaming single-threaded path.", short = 't', long = "n-threads", default_value = "4")]
         n_threads: usize,
     },
@@ -833,7 +839,7 @@ fn main() {
             }
         },
 
-        Subcommands::Smooth { hierarchy, input, output, max_gap, miss_label, n_threads } => {
+        Subcommands::Smooth { hierarchy, input, output, max_gap, miss_label, no_header, report_label_ids, n_threads } => {
             let (tree, names) = read_hierarchy_file(&hierarchy, &[]);
             let root_id = tree.root();
 
@@ -854,7 +860,8 @@ fn main() {
             // is the low-memory single-threaded path; > 1 parallelizes smoothing
             // across query sequences. Output is byte-identical for any thread count.
             let stats = smooth::run_smooth(
-                input, output, &tree, &names, root_id, max_gap, miss_label.as_deref(), n_threads,
+                input, output, &tree, &names, root_id, max_gap, miss_label.as_deref(),
+                no_header, report_label_ids, n_threads,
             );
             log::info!(
                 "Reads processed: {}, Intervals in: {}, Smoothed: {}, Merged: {}, Intervals out: {}",

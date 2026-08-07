@@ -572,6 +572,11 @@ fn dispatch_batch<W: Write>(
 /// clamped to at least 1. `n_threads == 1` is the low-memory single-threaded
 /// streaming path — there is deliberately no separate single-threaded function
 /// to keep in sync, only this one entry point.
+///
+/// With `no_header` the first line is data rather than a header (e.g. a BED
+/// file), and nothing is written to the output before the first record. The
+/// label column format then comes from `report_label_ids` instead of from the
+/// header.
 pub fn run_smooth(
     input: impl Read,
     output: impl Write,
@@ -580,6 +585,8 @@ pub fn run_smooth(
     root_id: usize,
     max_gap: u64,
     miss_label: Option<&str>,
+    no_header: bool,
+    report_label_ids: bool,
     n_threads: usize,
 ) -> SmoothStats {
     let n_threads = n_threads.max(1);
@@ -626,8 +633,12 @@ pub fn run_smooth(
     let mut grouper = Grouper::default();
     // Recycled across every batch; see dispatch_batch.
     let mut outbufs: Vec<Vec<u8>> = Vec::new();
-    let mut uses_names = false;
-    let mut first_content = true;
+    // A header line, if there is one, states whether the label column has names
+    // or ids. With --no-header there is no line to sniff, so the caller says
+    // which it is. Without a header line and without --no-header we keep the old
+    // fallback of treating the input as ids.
+    let mut uses_names = no_header && !report_label_ids;
+    let mut first_content = !no_header;
 
     // Process one raw line (may span block boundaries): trim, drop blanks,
     // capture/emit the header once, otherwise feed the grouper and dispatch a
@@ -780,18 +791,77 @@ mod tests {
                      seq3\t0\t100\tA\n";
 
         let mut out_seq: Vec<u8> = Vec::new();
-        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, 1);
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, false, false, 1);
 
         for nt in [1usize, 2, 4] {
             let mut out_par: Vec<u8> = Vec::new();
             let s2 =
-                run_smooth(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, None, nt);
+                run_smooth(input.as_bytes(), &mut out_par, &tree, &names, root, 1000, None, false, false, nt);
             assert_eq!(out_seq, out_par, "parallel output differs at n_threads={nt}");
             assert_eq!(s1.reads_processed, s2.reads_processed);
             assert_eq!(s1.intervals_in, s2.intervals_in);
             assert_eq!(s1.intervals_smoothed, s2.intervals_smoothed);
             assert_eq!(s1.intervals_out, s2.intervals_out);
         }
+    }
+
+    /// Headerless input (e.g. a BED file) must smooth to the same records as the
+    /// same input with a header, minus the header line itself.
+    #[test]
+    fn headerless_input_matches_headered() {
+        let tree = cousin_tree();
+        let root = tree.root();
+        let names = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "A".to_string(),
+            "root".to_string(),
+        ];
+        let records = "seq1\t0\t100\tB\n\
+                       seq1\t100\t200\troot\n\
+                       seq1\t200\t300\tC\n\
+                       seq2\t0\t50\tnone\n\
+                       seq2\t50\t150\tB\n";
+        let with_header = format!("query_name\tfrom_kmer\tto_kmer\tlabel_name\n{records}");
+
+        let mut out_headered: Vec<u8> = Vec::new();
+        run_smooth(with_header.as_bytes(), &mut out_headered, &tree, &names, root, 1000, None, false, false, 1);
+
+        for nt in [1usize, 2] {
+            let mut out_headerless: Vec<u8> = Vec::new();
+            run_smooth(records.as_bytes(), &mut out_headerless, &tree, &names, root, 1000, None, true, false, nt);
+            let headered_records = &out_headered[out_headered.iter().position(|&b| b == b'\n').unwrap() + 1..];
+            assert_eq!(headered_records, out_headerless, "headerless output differs at n_threads={nt}");
+        }
+    }
+
+    /// Headerless input in label id mode: the label column is parsed as node ids,
+    /// and an unresolved miss keeps the id-mode miss label.
+    #[test]
+    fn headerless_input_with_label_ids() {
+        let tree = cousin_tree(); // B(0), C(1) → A(2) → root(3)
+        let root = tree.root();
+        let names = vec![
+            "B".to_string(),
+            "C".to_string(),
+            "A".to_string(),
+            "root".to_string(),
+        ];
+        let records = "seq1\t0\t100\t0\n\
+                       seq1\t100\t200\t3\n\
+                       seq1\t200\t300\t1\n\
+                       seq2\t0\t50\t-\n";
+
+        let mut out: Vec<u8> = Vec::new();
+        run_smooth(records.as_bytes(), &mut out, &tree, &names, root, 1000, None, true, true, 1);
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "seq1\t0\t100\t0\n\
+             seq1\t100\t200\t2\n\
+             seq1\t200\t300\t1\n\
+             seq2\t0\t50\t-\n",
+            "interior root(3) promoted to LCA(B,C) = A(2), miss kept as '-'"
+        );
     }
 
     /// Force the streaming path across several batch dispatches: with far more
@@ -817,11 +887,11 @@ mod tests {
         }
 
         let mut out_seq: Vec<u8> = Vec::new();
-        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, 1);
+        let s1 = run_smooth(input.as_bytes(), &mut out_seq, &tree, &names, root, 1000, None, false, false, 1);
 
         let mut out_ord: Vec<u8> = Vec::new();
         let s2 =
-            run_smooth(input.as_bytes(), &mut out_ord, &tree, &names, root, 1000, None, 4);
+            run_smooth(input.as_bytes(), &mut out_ord, &tree, &names, root, 1000, None, false, false, 4);
         assert_eq!(out_seq, out_ord, "ordered streaming output differs across batches");
         assert_eq!(s1.reads_processed, s2.reads_processed);
         assert_eq!(s1.reads_processed, 140000);
